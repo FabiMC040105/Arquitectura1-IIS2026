@@ -8,27 +8,27 @@ module fetch #(
     // Archivo que contiene los bundles de instrucciones.
     parameter PROGRAM_FILE = "program.mem"
 ) (
-    // Dirección del bundle a leer.
-    // El PC lo mantiene pipeline_control, no Fetch, para que
-    // exista un unico registro de PC en todo el procesador.
-    input  logic [31:0]  pc_i,
+    // PC controlado por pipeline_control.
+    input logic [31:0] pc_i,
 
-    // Bundle leído y su validez.
+    // Bundle leído desde la memoria de instrucciones.
     output logic [127:0] bundle_o,
-    output logic         valid_o
+
+    // Indica si la dirección permite leer un bundle válido.
+    output logic valid_o,
+
+    // Indica si la dirección solicitada es inválida.
+    output logic access_error_o
 );
 
     // Capacidad total de la memoria en bytes.
     localparam integer MEM_BYTES = IMEM_WORDS * 4;
 
-    // Indica si la dirección solicitada es inválida.
+    // Error interno de acceso a memoria.
     logic access_error;
 
-    // ============================================================
-    // Memoria de instrucciones
-    // ============================================================
-
-    // Cada bundle contiene:
+    // Memoria de instrucciones.
+    // Cada bundle contiene cuatro slots de 32 bits:
     // [127:96] = CRYPTO
     // [95:64]  = BRU
     // [63:32]  = LSU
@@ -43,10 +43,10 @@ module fetch #(
         .access_error(access_error)
     );
 
-    // El bundle es válido si la dirección está alineada y se encuentra dentro del rango de la memoria.
- 
-    // Un bundle que contiene únicamente instrucciones NOP también puede ser válido.
+    // La memoria determina si la dirección es válida.
+    // Un bundle compuesto solamente por NOP también es válido.
     always_comb begin
+        access_error_o = access_error;
         valid_o = !access_error;
     end
 
