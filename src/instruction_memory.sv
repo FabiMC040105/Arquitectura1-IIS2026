@@ -2,7 +2,7 @@
 
 module instruction_memory #(
     parameter int MEM_BYTES = 65536,
-    parameter PROGRAM_FILE = "program.mem"
+    parameter PROGRAM_FILE = "program_test.mem"
 )(
     input  logic [31:0]  addr,
 
