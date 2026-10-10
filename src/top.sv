@@ -145,6 +145,27 @@ module top #(
 
 
     // ---------------------------------------------------------
+    // SENALES DEL BRU DECODER
+    // ---------------------------------------------------------
+
+    logic [2:0] bru_opcode;
+    logic [3:0] bru_rs1;
+    logic [3:0] bru_rs2;
+    logic [31:0] bru_offset;
+    logic bru_illegal_instr;
+
+
+    // ---------------------------------------------------------
+    // SENALES DEL BRU
+    // ---------------------------------------------------------
+
+    logic [31:0] bru_src1_value;
+    logic [31:0] bru_src2_value;
+    logic bru_branch_taken;
+    logic [31:0] bru_branch_target;
+
+
+    // ---------------------------------------------------------
     // INSTANCIA DE FETCH
     // ---------------------------------------------------------
 
@@ -243,6 +264,23 @@ module top #(
 
 
     // ---------------------------------------------------------
+    // INSTANCIA DEL BRU DECODER
+    // ---------------------------------------------------------
+
+    bru_decoder bru_decoder_inst (
+        .valid_i(valid_bru_o),
+        .instr_i(instr_bru_o),
+
+        // Campos extraídos
+        .opcode_o(bru_opcode),
+        .rs1_o(bru_rs1),
+        .rs2_o(bru_rs2),
+        .offset_o(bru_offset),
+        .illegal_o(bru_illegal_instr)
+    );
+
+
+    // ---------------------------------------------------------
     // INSTANCIA DEL REGISTER FILE
     // ---------------------------------------------------------
 
@@ -304,6 +342,23 @@ module top #(
 
 
     // ---------------------------------------------------------
+    // INSTANCIA DEL BRU
+    // ---------------------------------------------------------
+
+    bru bru_inst (
+        .opcode_i(bru_opcode),
+        .pc_i(pc_o),
+
+        .src1_value_i(bru_src1_value),
+        .src2_value_i(bru_src2_value),
+        .imm_i(bru_offset),
+
+        .branch_taken_o(bru_branch_taken),
+        .branch_target_o(bru_branch_target)
+    );
+
+
+    // ---------------------------------------------------------
     // CONEXIONES DEL REGISTER FILE, ALU Y LSU
     // ---------------------------------------------------------
 
@@ -338,6 +393,18 @@ module top #(
     assign regfile_wr_addr[1] = lsu_data_reg_idx;
     assign regfile_wr_data[1] = 32'h0;  // Por ahora, será reemplazado con lectura de memoria
     assign regfile_wr_en[1] = lsu_reg_write & valid_lsu_o;
+
+
+    // ===== CONEXIONES DEL BRU =====
+    // Direcciones de lectura para el BRU (puertos 4 y 5)
+    // Puerto 4: primer operando para comparación
+    assign regfile_rd_addr[4] = bru_rs1;
+    // Puerto 5: segundo operando para comparación
+    assign regfile_rd_addr[5] = bru_rs2;
+
+    // Operandos del BRU leídos del register file
+    assign bru_src1_value = regfile_rd_data[4];
+    assign bru_src2_value = regfile_rd_data[5];
 
 
     // ---------------------------------------------------------
