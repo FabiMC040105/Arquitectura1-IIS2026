@@ -119,6 +119,32 @@ module top #(
 
 
     // ---------------------------------------------------------
+    // SENALES DEL LSU DECODER
+    // ---------------------------------------------------------
+
+    logic [3:0] lsu_base_reg_idx;
+    logic [3:0] lsu_data_reg_idx;
+    logic [11:0] lsu_offset;
+    logic lsu_load_enable;
+    logic lsu_store_enable;
+    logic lsu_reg_write;
+    logic lsu_nop;
+    logic lsu_illegal_instr;
+
+
+    // ---------------------------------------------------------
+    // SENALES DEL LSU
+    // ---------------------------------------------------------
+
+    logic [31:0] lsu_base_addr;
+    logic [31:0] lsu_store_data;
+    logic [31:0] lsu_effective_addr;
+    logic [31:0] lsu_mem_write_data;
+    logic lsu_mem_read;
+    logic lsu_mem_write;
+
+
+    // ---------------------------------------------------------
     // INSTANCIA DE FETCH
     // ---------------------------------------------------------
 
@@ -195,6 +221,28 @@ module top #(
 
 
     // ---------------------------------------------------------
+    // INSTANCIA DEL LSU DECODER
+    // ---------------------------------------------------------
+
+    lsu_decoder lsu_decoder_inst (
+        .instr(instr_lsu_o),
+
+        // Campos extraídos
+        .base_reg_idx(lsu_base_reg_idx),
+        .data_reg_idx(lsu_data_reg_idx),
+        .offset(lsu_offset),
+
+        // Señales de control
+        .load_enable(lsu_load_enable),
+        .store_enable(lsu_store_enable),
+        .reg_write(lsu_reg_write),
+
+        .nop(lsu_nop),
+        .illegal_instr(lsu_illegal_instr)
+    );
+
+
+    // ---------------------------------------------------------
     // INSTANCIA DEL REGISTER FILE
     // ---------------------------------------------------------
 
@@ -235,9 +283,31 @@ module top #(
 
 
     // ---------------------------------------------------------
-    // CONEXIONES DEL REGISTER FILE Y ALU
+    // INSTANCIA DEL LSU
     // ---------------------------------------------------------
 
+    lsu lsu_inst (
+        .base_addr(lsu_base_addr),
+        .offset(lsu_offset),
+
+        .store_data(lsu_store_data),
+
+        .load_enable(lsu_load_enable),
+        .store_enable(lsu_store_enable),
+
+        .effective_addr(lsu_effective_addr),
+        .mem_write_data(lsu_mem_write_data),
+
+        .mem_read(lsu_mem_read),
+        .mem_write(lsu_mem_write)
+    );
+
+
+    // ---------------------------------------------------------
+    // CONEXIONES DEL REGISTER FILE, ALU Y LSU
+    // ---------------------------------------------------------
+
+    // ===== CONEXIONES DEL ALU =====
     // Direcciones de lectura para el ALU (puertos 0 y 1)
     assign regfile_rd_addr[0] = alu_rs1;
     assign regfile_rd_addr[1] = alu_rs2;
@@ -250,6 +320,24 @@ module top #(
     assign regfile_wr_addr[0] = alu_rd;
     assign regfile_wr_data[0] = alu_result;
     assign regfile_wr_en[0] = valid_alu_o;
+
+
+    // ===== CONEXIONES DEL LSU =====
+    // Direcciones de lectura para el LSU (puertos 2 y 3)
+    // Puerto 2: base register para dirección efectiva
+    assign regfile_rd_addr[2] = lsu_base_reg_idx;
+    // Puerto 3: registro de datos a almacenar (para STORE)
+    assign regfile_rd_addr[3] = lsu_data_reg_idx;
+
+    // Operandos del LSU leídos del register file
+    assign lsu_base_addr = regfile_rd_data[2];
+    assign lsu_store_data = regfile_rd_data[3];
+
+    // Conexión de salida del LSU al puerto de escritura 1 del register file
+    // (para escritura del resultado de LOAD)
+    assign regfile_wr_addr[1] = lsu_data_reg_idx;
+    assign regfile_wr_data[1] = 32'h0;  // Por ahora, será reemplazado con lectura de memoria
+    assign regfile_wr_en[1] = lsu_reg_write & valid_lsu_o;
 
 
     // ---------------------------------------------------------
