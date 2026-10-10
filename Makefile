@@ -65,9 +65,12 @@ tb_top:
 	    tb/tb_top.sv $(SRC)
 	$(VVP) sim_tb_top
 
-# Ejecuta todas las pruebas disponibles actualmente.
-test: check-modules fetch dispatch tb_top
+feistel:
+	$(IVERILOG) $(FLAGS) -s tb_feistel -o sim_feistel tb/tb_feistel.sv $(SRC)
+	$(VVP) sim_feistel
+
+test: fetch dispatch tb_top feistel
 
 # Elimina los ejecutables de simulación.
 clean:
-	rm -f sim_fetch sim_dispatch sim_top sim_tb_top
+	rm -f sim_fetch sim_dispatch sim_top sim_tb_top sim_feistel
