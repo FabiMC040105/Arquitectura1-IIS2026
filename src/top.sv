@@ -426,14 +426,14 @@ module top #(
     // SENALES DEL REGISTER FILE
     // ---------------------------------------------------------
 
-    // Puertos de lectura (8 total para soportar 4 unidades ejecutivas)
-    logic [3:0] regfile_rd_addr [8];
-    logic [31:0] regfile_rd_data [8];
+    // Puertos de lectura: 8 registros
+    logic [7:0][3:0] regfile_rd_addr;
+    logic [7:0][31:0] regfile_rd_data;
 
-    // Puertos de escritura (4 total, uno por unidad ejecutiva)
-    logic [3:0] regfile_wr_addr [4];
-    logic [31:0] regfile_wr_data [4];
-    logic regfile_wr_en [4];
+    // Puertos de escritura: 4 registros
+    logic [3:0] regfile_wr_en;
+    logic [3:0][3:0] regfile_wr_addr;
+    logic [3:0][31:0] regfile_wr_data;
 
 
     // =========================================================

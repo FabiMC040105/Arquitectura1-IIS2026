@@ -108,6 +108,8 @@ module tb_top;
             $fatal(1, "ERROR: PC incorrecto despues del reset");
 
         $display("PASS: reset deja el PC en 0x0");
+        $display("DEBUG: x2 despues de reset = %h", dut.regfile_inst.regs[2]);
+        $display("DEBUG: bundle 0 = %h", dut.fetch_inst.instruction_memory_inst.memory[0]);
 
         if (dut.if_access_error !== 1'b0)
             $fatal(1, "ERROR: Fetch detecto un error de acceso inesperado");

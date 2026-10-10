@@ -1,34 +1,53 @@
+
 module register_file #(
-  parameter WIDTH       = 32,
-  parameter DEPTH       = 16,
-  parameter N_RD        = 8, // puertos de lectura
-  parameter N_WR        = 4 // puertos de escritura
+    parameter WIDTH = 32,
+    parameter DEPTH = 16,
+    parameter N_RD = 8,
+    parameter N_WR = 4
 )(
-  input  logic                       clk,
-  input  logic                       rst,
+    input logic clk,
+    input logic rst,
 
-  input  logic [3:0] rd_addr [N_RD],
-  output logic [WIDTH-1:0] rd_data [N_RD],
+    // Puertos de lectura en formato packed
+    input logic [N_RD-1:0][3:0] rd_addr,
+    output wire [N_RD-1:0][WIDTH-1:0] rd_data,
 
-  input  logic wr_en [N_WR],
-  input  logic [3:0]  wr_addr [N_WR],
-  input  logic [WIDTH-1:0] wr_data [N_WR]
+    // Puertos de escritura en formato packed
+    input logic [N_WR-1:0] wr_en,
+    input logic [N_WR-1:0][3:0] wr_addr,
+    input logic [N_WR-1:0][WIDTH-1:0] wr_data
 );
-  logic [WIDTH-1:0] regs [DEPTH];
 
-  // x0 esta cableado a cero: leerlo siempre entrega 0 sin importar
-  // lo que contenga el arreglo de registros.
-  always_comb
-    for (int i = 0; i < N_RD; i++)
-      rd_data[i] = (rd_addr[i] == 4'd0) ? '0 : regs[rd_addr[i]];
+    // Los 16 registros del procesador, cada uno de 32 bits
+    logic [WIDTH-1:0] regs [0:DEPTH-1];
 
-  // Escrituras suceden en flanco positivo
-  always_ff @(posedge clk or posedge rst) begin
-    if (rst)
-      for (int i = 0; i < DEPTH; i++) regs[i] <= '0;
-    else
-      for (int i = 0; i < N_WR; i++)
-        // Las escrituras a x0 se descartan para que nunca cambie de valor.
-        if (wr_en[i] && wr_addr[i] != 4'd0) regs[wr_addr[i]] <= wr_data[i];
-  end
+    // Lectura combinacional de los registros
+    // x0 siempre devuelve cero
+    genvar r;
+    generate
+        for (r = 0; r < N_RD; r = r + 1) begin : gen_read
+            assign rd_data[r] =
+                (rd_addr[r] == 4'd0) ? {WIDTH{1'b0}} :
+                                      regs[rd_addr[r]];
+        end
+    endgenerate
+
+    // Escritura de registros en el flanco del reloj
+    // y reinicio de todos los registros
+    integer i;
+
+    always_ff @(posedge clk or posedge rst) begin
+        if (rst) begin
+            for (i = 0; i < DEPTH; i = i + 1)
+                regs[i] <= '0;
+        end
+        else begin
+            for (i = 0; i < N_WR; i = i + 1) begin
+                // Nunca permitimos modificar x0
+                if (wr_en[i] && wr_addr[i] != 4'd0)
+                    regs[wr_addr[i]] <= wr_data[i];
+            end
+        end
+    end
+
 endmodule
