@@ -1,3 +1,5 @@
+`timescale 1ns/1ps
+
 module fetch #(
     // Cantidad de palabras de 32 bits que tiene la memoria.
     // 16384 palabras * 4 bytes = 64 KiB.
