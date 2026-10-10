@@ -22,7 +22,7 @@ module key_vault (
     output logic authorized,   // Indica si existe autorización
     output logic access_error, // Indica si ocurrió un acceso no permitido
 
-    // NUEVO: conexión interna hacia la unidad criptográfica
+    // Conexión interna hacia la unidad criptográfica
     output logic [31:0] subkey_out, // Subllave seleccionada
     output logic subkey_valid       // Indica si puede utilizarse
 );
@@ -97,7 +97,7 @@ module key_vault (
                 end
             end
 
-            // NUEVO: FROUND sin autorización genera un error
+            // FROUND sin autorización genera un error
             else if (fround_en && !authorized) begin
                 access_error <= 1'b1;
             end
