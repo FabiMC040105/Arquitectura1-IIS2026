@@ -4,16 +4,9 @@
 // Por ahora integra solamente Fetch y Dispatch.
 // Las demas unidades se conectaran cuando sus interfaces esten definidas.
 module top #(
-
-    // Cantidad de palabras de 32 bits disponibles en la memoria
-    // de instrucciones de Fetch.
-    // 16384 palabras * 4 bytes = 65536 bytes = 64 KiB.
     parameter integer IMEM_WORDS = 16384,
-
-    // Direccion desde la que comienza la ejecucion
-    // despues de activar el reset.
-    parameter logic [31:0] RESET_PC = 32'h00000000
-
+    parameter logic [31:0] RESET_PC = 32'h00000000,
+    parameter PROGRAM_FILE = "program.mem"
 ) (
 
     // ---------------------------------------------------------
@@ -98,7 +91,8 @@ module top #(
     // configurar el tamano de memoria y la direccion inicial.
     fetch #(
         .IMEM_WORDS(IMEM_WORDS),
-        .RESET_PC(RESET_PC)
+        .RESET_PC(RESET_PC),
+        .PROGRAM_FILE(PROGRAM_FILE)
     ) fetch_inst (
 
         // Entradas de reloj y control.
