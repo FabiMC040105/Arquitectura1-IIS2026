@@ -83,6 +83,20 @@ module top #(
 
 
     // ---------------------------------------------------------
+    // SENALES DEL REGISTER FILE
+    // ---------------------------------------------------------
+
+    // Puertos de lectura (8 total para soportar 4 unidades ejecutivas)
+    logic [3:0] regfile_rd_addr [8];
+    logic [31:0] regfile_rd_data [8];
+
+    // Puertos de escritura (4 total, uno por unidad ejecutiva)
+    logic [3:0] regfile_wr_addr [4];
+    logic [31:0] regfile_wr_data [4];
+    logic regfile_wr_en [4];
+
+
+    // ---------------------------------------------------------
     // INSTANCIA DE FETCH
     // ---------------------------------------------------------
 
@@ -138,6 +152,30 @@ module top #(
         .valid_bru_o(valid_bru_o),
         .valid_feist_o(valid_feist_o),
         .valid_o(dispatch_valid_o)
+    );
+
+
+    // ---------------------------------------------------------
+    // INSTANCIA DEL REGISTER FILE
+    // ---------------------------------------------------------
+
+    register_file #(
+        .WIDTH(32),
+        .DEPTH(16),
+        .N_RD(8),
+        .N_WR(4)
+    ) regfile_inst (
+        .clk(clk_i),
+        .rst(rst_i),
+
+        // Puertos de lectura
+        .rd_addr(regfile_rd_addr),
+        .rd_data(regfile_rd_data),
+
+        // Puertos de escritura
+        .wr_en(regfile_wr_en),
+        .wr_addr(regfile_wr_addr),
+        .wr_data(regfile_wr_data)
     );
 
 

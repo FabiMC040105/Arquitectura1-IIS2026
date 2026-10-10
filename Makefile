@@ -15,8 +15,7 @@ dispatch:
 	$(VVP) sim_dispatch
 
 top:
-	$(IVERILOG) $(FLAGS) -s tb_top -o sim_top tb/tb_top.sv src/top.sv src/fetch.sv src/dispatch.sv
-	$(VVP) sim_top
+	$(IVERILOG) $(FLAGS) -s top -o sim_top src/top.sv src/fetch.sv src/dispatch.sv src/instruction_memory.sv src/register_file.sv src/alu.sv src/alu_decoder.sv src/lsu.sv src/lsu_decoder.sv src/data_memory.sv src/bru.sv src/bru_decoder.sv src/bru_conexion.sv src/crypto_unit.sv src/feist_decoder.sv src/key_vault.sv src/pipeline_reg.sv src/pipeline_control.sv
 
 test: fetch dispatch
 
