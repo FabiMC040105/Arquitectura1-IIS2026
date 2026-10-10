@@ -97,6 +97,28 @@ module top #(
 
 
     // ---------------------------------------------------------
+    // SENALES DEL ALU DECODER
+    // ---------------------------------------------------------
+
+    logic [3:0] alu_rd;
+    logic [3:0] alu_rs1;
+    logic [3:0] alu_rs2;
+    logic [2:0] alu_opcode;
+    logic alu_imm_op;
+    logic [11:0] alu_imm;
+
+
+    // ---------------------------------------------------------
+    // SENALES DEL ALU
+    // ---------------------------------------------------------
+
+    logic [31:0] alu_op1;
+    logic [31:0] alu_op2;
+    logic [31:0] alu_result;
+    logic alu_zero;
+
+
+    // ---------------------------------------------------------
     // INSTANCIA DE FETCH
     // ---------------------------------------------------------
 
@@ -156,6 +178,23 @@ module top #(
 
 
     // ---------------------------------------------------------
+    // INSTANCIA DEL ALU DECODER
+    // ---------------------------------------------------------
+
+    alu_decoder alu_decoder_inst (
+        .instr_alu_o(instr_alu_o),
+
+        // Campos extraídos
+        .rd(alu_rd),
+        .rs1(alu_rs1),
+        .rs2(alu_rs2),
+        .opcode(alu_opcode),
+        .imm_op(alu_imm_op),
+        .imm(alu_imm)
+    );
+
+
+    // ---------------------------------------------------------
     // INSTANCIA DEL REGISTER FILE
     // ---------------------------------------------------------
 
@@ -177,6 +216,40 @@ module top #(
         .wr_addr(regfile_wr_addr),
         .wr_data(regfile_wr_data)
     );
+
+
+    // ---------------------------------------------------------
+    // INSTANCIA DEL ALU
+    // ---------------------------------------------------------
+
+    alu alu_inst (
+        .op1(alu_op1),
+        .op2(alu_op2),
+        .imm(alu_imm),
+        .opcode(alu_opcode),
+        .imm_op(alu_imm_op),
+
+        .data_out(alu_result),
+        .zero(alu_zero)
+    );
+
+
+    // ---------------------------------------------------------
+    // CONEXIONES DEL REGISTER FILE Y ALU
+    // ---------------------------------------------------------
+
+    // Direcciones de lectura para el ALU (puertos 0 y 1)
+    assign regfile_rd_addr[0] = alu_rs1;
+    assign regfile_rd_addr[1] = alu_rs2;
+
+    // Operandos del ALU leídos del register file
+    assign alu_op1 = regfile_rd_data[0];
+    assign alu_op2 = regfile_rd_data[1];
+
+    // Conexión de salida del ALU al puerto de escritura 0 del register file
+    assign regfile_wr_addr[0] = alu_rd;
+    assign regfile_wr_data[0] = alu_result;
+    assign regfile_wr_en[0] = valid_alu_o;
 
 
     // ---------------------------------------------------------
