@@ -139,6 +139,9 @@ module top #(
     // Validez del bundle generado por Fetch.
     logic if_valid;
 
+    // Validez del error
+    logic if_access_error;
+
 
     // ---------------------------------------------------------
     // SENALES DE PIPELINE CONTROL
@@ -488,7 +491,8 @@ module top #(
 
         // Salidas de Fetch conectadas a senales internas.
         .bundle_o(if_bundle),
-        .valid_o(if_valid)
+        .valid_o(if_valid),
+        .access_error_o(if_access_error)
     );
 
 

@@ -109,6 +109,9 @@ module tb_top;
 
         $display("PASS: reset deja el PC en 0x0");
 
+        if (dut.if_access_error !== 1'b0)
+            $fatal(1, "ERROR: Fetch detecto un error de acceso inesperado");
+
         @(negedge clk_i);
         rst_i = 1'b0;
 
@@ -167,7 +170,17 @@ module tb_top;
             $fatal(1, "ERROR: x0 fue modificado");
 
         $display("PASS: x0 permanece en cero");
+        if (instr_alu_o !== dut.id_bundle[31:0])
+            $fatal(1, "ERROR: el slot ALU no coincide con el bundle recibido");
 
+        if (instr_lsu_o !== dut.id_bundle[63:32])
+            $fatal(1, "ERROR: el slot LSU no coincide con el bundle recibido");
+
+        if (instr_bru_o !== dut.id_bundle[95:64])
+            $fatal(1, "ERROR: el slot BRU no coincide con el bundle recibido");
+
+        if (instr_feist_o !== dut.id_bundle[127:96])
+            $fatal(1, "ERROR: el slot FEIST no coincide con el bundle recibido");
         $display("TODAS LAS PRUEBAS DE TOP PASARON");
         $finish;
     end

@@ -1,4 +1,3 @@
-
 module key_vault (
     input logic clk, // reloj del procesador para coordinar operaciones
     input logic reset, //señal que permite reiniciar la bóveda

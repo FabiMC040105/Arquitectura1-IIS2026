@@ -24,19 +24,19 @@ module alu #(parameter WIDTH = 32) (
     case (imm_op)
       1'b0: begin
         case (opcode)
-          ADD:  data_out = signed'(op1) + signed'(op2);
-          SUB:  data_out = signed'(op1) - signed'(op2);
+          ADD:  data_out = $signed(op1) + $signed(op2);
+          SUB:  data_out = $signed(op1) - $signed(op2);
           OR:   data_out = op1 | op2;
           XOR:  data_out = op1 ^ op2;
           AND:  data_out = op1 & op2;
-          SLT:  data_out = (signed'(op1) < signed'(op2)) ?
+          SLT:  data_out = ($signed(op1) < $signed(op2)) ?
                              {{(WIDTH-1){1'b0}}, 1'b1} : '0;
           default: data_out = '0;
         endcase
       end
       1'b1: begin
         case (opcode)
-          ADDI: data_out = signed'(op1) + signed'({{20{imm[11]}}, imm});
+          ADDI: data_out = $signed(op1) + $signed({{20{imm[11]}}, imm});
           SRLI: data_out = op1 >> imm;
           SLLI: data_out = op1 << imm;
           default: data_out = '0;

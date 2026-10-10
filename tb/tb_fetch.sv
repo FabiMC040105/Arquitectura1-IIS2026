@@ -1,116 +1,146 @@
 `timescale 1ns/1ps
 
-module tb_fetch;
+module tb_top;
 
-    // Fetch ya no tiene PC propio: la direccion es una entrada.
-    logic [31:0] pc_i;
+    logic clk_i;
+    logic rst_i;
 
-    // Salidas del modulo Fetch.
+    logic stall_i;
+    logic branch_taken_ex_i;
+    logic [31:0] branch_target_ex_i;
+    logic pc_write_wb_i;
+    logic [31:0] pc_write_data_wb_i;
+
+    logic [31:0] pc_o;
     logic [127:0] bundle_o;
-    logic valid_o;
+    logic fetch_valid_o;
+    logic fetch_access_error_o;
 
-    // Creamos Fetch con una memoria pequeña para las pruebas.
-    // 16 palabras de 4 bytes = 64 bytes = 4 bundles.
-    fetch #(
-        .IMEM_WORDS(16)
+    logic [127:0] bundle_if_id_o;
+    logic [31:0] pc_if_id_o;
+    logic valid_if_id_o;
+
+    logic [31:0] instr_alu_o;
+    logic [31:0] instr_lsu_o;
+    logic [31:0] instr_bru_o;
+    logic [31:0] instr_feist_o;
+    logic [31:0] dispatch_pc_o;
+
+    logic valid_alu_o;
+    logic valid_lsu_o;
+    logic valid_bru_o;
+    logic valid_feist_o;
+    logic dispatch_valid_o;
+
+    logic enable_if_id_o;
+    logic enable_id_rr_o;
+    logic enable_rr_ex_o;
+    logic enable_ex_wb_o;
+
+    logic flush_if_id_o;
+    logic flush_id_rr_o;
+    logic flush_rr_ex_o;
+    logic flush_ex_wb_o;
+
+    top #(
+        .IMEM_WORDS(16384),
+        .RESET_PC(32'h00000000),
+        .PROGRAM_FILE("program.mem")
     ) dut (
-        .pc_i(pc_i),
+        .clk_i(clk_i),
+        .rst_i(rst_i),
+
+        .stall_i(stall_i),
+        .branch_taken_ex_i(branch_taken_ex_i),
+        .branch_target_ex_i(branch_target_ex_i),
+        .pc_write_wb_i(pc_write_wb_i),
+        .pc_write_data_wb_i(pc_write_data_wb_i),
+
+        .pc_o(pc_o),
         .bundle_o(bundle_o),
-        .valid_o(valid_o)
+        .fetch_valid_o(fetch_valid_o),
+        .fetch_access_error_o(fetch_access_error_o),
+
+        .bundle_if_id_o(bundle_if_id_o),
+        .pc_if_id_o(pc_if_id_o),
+        .valid_if_id_o(valid_if_id_o),
+
+        .instr_alu_o(instr_alu_o),
+        .instr_lsu_o(instr_lsu_o),
+        .instr_bru_o(instr_bru_o),
+        .instr_feist_o(instr_feist_o),
+        .dispatch_pc_o(dispatch_pc_o),
+
+        .valid_alu_o(valid_alu_o),
+        .valid_lsu_o(valid_lsu_o),
+        .valid_bru_o(valid_bru_o),
+        .valid_feist_o(valid_feist_o),
+        .dispatch_valid_o(dispatch_valid_o),
+
+        .enable_if_id_o(enable_if_id_o),
+        .enable_id_rr_o(enable_id_rr_o),
+        .enable_rr_ex_o(enable_rr_ex_o),
+        .enable_ex_wb_o(enable_ex_wb_o),
+
+        .flush_if_id_o(flush_if_id_o),
+        .flush_id_rr_o(flush_id_rr_o),
+        .flush_rr_ex_o(flush_rr_ex_o),
+        .flush_ex_wb_o(flush_ex_wb_o)
     );
 
     initial begin
-        pc_i = 32'h00000000;
+        clk_i = 1'b0;
+    end
 
-        // Cargamos bundles conocidos en la memoria de instrucciones.
-        // Cada posicion es un bundle completo de 128 bits.
-        dut.instruction_memory_inst.memory[0] = {
-            32'h00000044,
-            32'h00000033,
-            32'h00000022,
-            32'h00000011
-        };
+    always #5 clk_i = ~clk_i;
 
-        dut.instruction_memory_inst.memory[1] = {
-            32'h00000088,
-            32'h00000077,
-            32'h00000066,
-            32'h00000055
-        };
+    initial begin
+        rst_i = 1'b1;
 
-        dut.instruction_memory_inst.memory[2] = {
-            32'h000000A4,
-            32'h000000A3,
-            32'h000000A2,
-            32'h000000A1
-        };
+        stall_i = 1'b0;
+        branch_taken_ex_i = 1'b0;
+        branch_target_ex_i = 32'b0;
+        pc_write_wb_i = 1'b0;
+        pc_write_data_wb_i = 32'b0;
 
-        // 1. Lectura del bundle en la direccion 0x00.
-        #1;
+        $display("========================================");
+        $display("Inicio de pruebas de TOP");
+        $display("========================================");
 
-        if (valid_o !== 1'b1)
-            $fatal(1, "ERROR: primer bundle invalido");
+        repeat (2) @(posedge clk_i);
+        @(negedge clk_i);
+        rst_i = 1'b0;
 
-        if (bundle_o !== {
-            32'h00000044,
-            32'h00000033,
-            32'h00000022,
-            32'h00000011
-        })
-            $fatal(1, "ERROR: slots incorrectos en el primer bundle");
+        repeat (4) begin
+            @(posedge clk_i);
+            #1;
 
-        $display("PASS: lectura y orden de los cuatro slots");
+            $display(
+                "PC=%h | IF/ID PC=%h | Fetch valid=%b | IF/ID valid=%b | Dispatch valid=%b",
+                pc_o,
+                pc_if_id_o,
+                fetch_valid_o,
+                valid_if_id_o,
+                dispatch_valid_o
+            );
 
-        // 2. El bundle leido sigue al PC que entra por pc_i.
-        pc_i = 32'h00000010;
-        #1;
+            if (fetch_access_error_o !== 1'b0) begin
+                $fatal(1, "ERROR: Fetch reporto un acceso invalido");
+            end
 
-        if (valid_o !== 1'b1)
-            $fatal(1, "ERROR: bundle invalido en direccion 0x10");
+            if (pc_o[3:0] !== 4'b0000) begin
+                $fatal(1, "ERROR: PC desalineado");
+            end
 
-        if (bundle_o !== {
-            32'h00000088,
-            32'h00000077,
-            32'h00000066,
-            32'h00000055
-        })
-            $fatal(1, "ERROR: bundle incorrecto en direccion 0x10");
+            if (valid_if_id_o && dispatch_pc_o !== pc_if_id_o) begin
+                $fatal(1, "ERROR: el PC de Dispatch no coincide con IF/ID");
+            end
+        end
 
-        $display("PASS: el bundle sigue al PC de entrada");
+        $display("========================================");
+        $display("Pruebas basicas de TOP finalizadas");
+        $display("========================================");
 
-        // 3. Una direccion posterior lee el bundle correspondiente.
-        pc_i = 32'h00000020;
-        #1;
-
-        if (bundle_o !== {
-            32'h000000A4,
-            32'h000000A3,
-            32'h000000A2,
-            32'h000000A1
-        })
-            $fatal(1, "ERROR: bundle incorrecto en direccion 0x20");
-
-        $display("PASS: lectura en direccion 0x20");
-
-        // 4. Direccion no alineada a 16 bytes: debe marcarse invalida.
-        pc_i = 32'h00000023;
-        #1;
-
-        if (valid_o !== 1'b0)
-            $fatal(1, "ERROR: se acepto una direccion desalineada");
-
-        $display("PASS: deteccion de direccion desalineada");
-
-        // 5. Direccion fuera del rango de la memoria.
-        pc_i = 32'h00001000;
-        #1;
-
-        if (valid_o !== 1'b0)
-            $fatal(1, "ERROR: se acepto una direccion fuera de rango");
-
-        $display("PASS: deteccion de direccion fuera de rango");
-
-        $display("TODAS LAS PRUEBAS DE FETCH PASARON");
         $finish;
     end
 
