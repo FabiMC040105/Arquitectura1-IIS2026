@@ -16,9 +16,11 @@ module register_file #(
 );
   logic [WIDTH-1:0] regs [DEPTH];
 
+  // x0 esta cableado a cero: leerlo siempre entrega 0 sin importar
+  // lo que contenga el arreglo de registros.
   always_comb
     for (int i = 0; i < N_RD; i++)
-      rd_data[i] = regs[rd_addr[i]];
+      rd_data[i] = (rd_addr[i] == 4'd0) ? '0 : regs[rd_addr[i]];
 
   // Escrituras suceden en flanco positivo
   always_ff @(posedge clk or posedge rst) begin
@@ -26,6 +28,7 @@ module register_file #(
       for (int i = 0; i < DEPTH; i++) regs[i] <= '0;
     else
       for (int i = 0; i < N_WR; i++)
-        if (wr_en[i]) regs[wr_addr[i]] <= wr_data[i];
+        // Las escrituras a x0 se descartan para que nunca cambie de valor.
+        if (wr_en[i] && wr_addr[i] != 4'd0) regs[wr_addr[i]] <= wr_data[i];
   end
 endmodule
