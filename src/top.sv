@@ -87,9 +87,11 @@ module top #(
     //           4 + 4 + 12 + 1 + 1 + 1 + 1   =  24
     //   BRU   : opcode, rs1, rs2, offset, valid
     //           3 + 4 + 4 + 32 + 1           =  44
-    //   FEIST : instruccion completa, valid
-    //           32 + 1                       =  33
-    localparam integer W_ID_RR = 32 + 29 + 24 + 44 + 33;
+    //   FEIST : auth_en, logout_en, kstore_en, fround_en,
+    //           auth_rs1, auth_rs2, kstore_rs1,
+    //           rdL, rdR, rsL, rsR, key, round, mode, valid
+    //           4 + 12 + 16 + 2 + 2 + 1 + 1  =  38
+    localparam integer W_ID_RR = 32 + 29 + 24 + 44 + 38;
 
     // RR/EX transporta lo mismo que ID/RR salvo los indices de
     // registro fuente, que se sustituyen por los valores leidos.
@@ -101,9 +103,12 @@ module top #(
     //           32 + 32 + 4 + 12 + 1 + 1 + 1 + 1 = 84
     //   BRU   : opcode, src1, src2, offset, valid
     //           3 + 32 + 32 + 32 + 1         = 100
-    //   FEIST : instruccion completa, valid
-    //           32 + 1                       =  33
-    localparam integer W_RR_EX = 32 + 85 + 84 + 100 + 33;
+    //   FEIST : los indices de fuente se sustituyen por sus valores.
+    //           auth_en, logout_en, kstore_en, fround_en,
+    //           auth_val1, auth_val2, kstore_val, l_in, r_in,
+    //           rdL, rdR, key, round, mode, valid
+    //           4 + 160 + 8 + 2 + 2 + 1 + 1  = 178
+    localparam integer W_RR_EX = 32 + 85 + 84 + 100 + 178;
 
     // EX/WB transporta los resultados a escribir.
     //   PC                                      32
@@ -111,7 +116,9 @@ module top #(
     //           32 + 4 + 1                   =  37
     //   LSU   : dato leido, rd, write_enable
     //           32 + 4 + 1                   =  37
-    localparam integer W_EX_WB = 32 + 37 + 37;
+    //   FEIST : l_out, r_out, rdL, rdR, write_enable
+    //           32 + 32 + 4 + 4 + 1          =  73
+    localparam integer W_EX_WB = 32 + 37 + 37 + 73;
 
     // x1 es el PC. No se almacena en el register file: leerlo entrega
     // el PC del bundle que lo lee y escribirlo redirige el PC.
@@ -200,6 +207,23 @@ module top #(
     logic [31:0] id_bru_offset;
     logic        id_bru_illegal_instr;
 
+    // Campos extraidos por el decoder de la unidad Feistel.
+    logic        id_feist_auth_en;
+    logic        id_feist_logout_en;
+    logic        id_feist_kstore_en;
+    logic        id_feist_fround_en;
+    logic [3:0]  id_feist_auth_rs1;
+    logic [3:0]  id_feist_auth_rs2;
+    logic [3:0]  id_feist_kstore_rs1;
+    logic [3:0]  id_feist_rdL;
+    logic [3:0]  id_feist_rdR;
+    logic [3:0]  id_feist_rsL;
+    logic [3:0]  id_feist_rsR;
+    logic [1:0]  id_feist_key;
+    logic [1:0]  id_feist_round;
+    logic        id_feist_mode;
+    logic        id_feist_illegal_opcode;
+
 
     // =========================================================
     // ETAPA RR
@@ -235,7 +259,20 @@ module top #(
     logic [31:0] rr_bru_offset;
     logic        rr_bru_valid;
 
-    logic [31:0] rr_instr_feist;
+    logic        rr_feist_auth_en;
+    logic        rr_feist_logout_en;
+    logic        rr_feist_kstore_en;
+    logic        rr_feist_fround_en;
+    logic [3:0]  rr_feist_auth_rs1;
+    logic [3:0]  rr_feist_auth_rs2;
+    logic [3:0]  rr_feist_kstore_rs1;
+    logic [3:0]  rr_feist_rdL;
+    logic [3:0]  rr_feist_rdR;
+    logic [3:0]  rr_feist_rsL;
+    logic [3:0]  rr_feist_rsR;
+    logic [1:0]  rr_feist_key;
+    logic [1:0]  rr_feist_round;
+    logic        rr_feist_mode;
     logic        rr_feist_valid;
 
     // Valores leidos del register file en esta etapa.
@@ -245,6 +282,19 @@ module top #(
     logic [31:0] rr_lsu_store_data;
     logic [31:0] rr_bru_src1_value;
     logic [31:0] rr_bru_src2_value;
+
+    // Direcciones multiplexadas de los dos puertos de lectura que
+    // comparte la unidad Feistel: AUTH usa dos registros, KSTORE uno
+    // y FROUND las dos mitades del bloque. Las operaciones son
+    // mutuamente excluyentes porque solo hay un slot Feistel.
+    logic [3:0]  rr_feist_rd_addr_a;
+    logic [3:0]  rr_feist_rd_addr_b;
+
+    logic [31:0] rr_feist_auth_val1;
+    logic [31:0] rr_feist_auth_val2;
+    logic [31:0] rr_feist_kstore_val;
+    logic [31:0] rr_feist_l_in;
+    logic [31:0] rr_feist_r_in;
 
 
     // =========================================================
@@ -282,8 +332,41 @@ module top #(
     logic [31:0] ex_bru_offset;
     logic        ex_bru_valid;
 
-    logic [31:0] ex_instr_feist;
+    logic        ex_feist_auth_en;
+    logic        ex_feist_logout_en;
+    logic        ex_feist_kstore_en;
+    logic        ex_feist_fround_en;
+    logic [31:0] ex_feist_auth_val1;
+    logic [31:0] ex_feist_auth_val2;
+    logic [31:0] ex_feist_kstore_val;
+    logic [31:0] ex_feist_l_in;
+    logic [31:0] ex_feist_r_in;
+    logic [3:0]  ex_feist_rdL;
+    logic [3:0]  ex_feist_rdR;
+    logic [1:0]  ex_feist_key;
+    logic [1:0]  ex_feist_round;
+    logic        ex_feist_mode;
     logic        ex_feist_valid;
+
+    // Enables de la unidad Feistel ya filtrados por la validez del
+    // bundle: un bundle invalidado no puede autenticar ni tocar la
+    // boveda de llaves.
+    logic        ex_feist_active;
+    logic        ex_feist_auth_req;
+    logic        ex_feist_logout_req;
+    logic        ex_feist_kstore_req;
+    logic        ex_feist_fround_req;
+
+    // Interfaz entre la boveda y la unidad criptografica.
+    logic [31:0] ex_vault_subkey;
+    logic        ex_vault_subkey_valid;
+    logic        ex_vault_authorized;
+    logic        ex_vault_access_error;
+
+    logic [31:0] ex_feist_l_out;
+    logic [31:0] ex_feist_r_out;
+    logic        ex_feist_result_valid;
+    logic        ex_feist_access_error;
 
     // Resultados de las unidades de ejecucion.
     logic [31:0] ex_alu_result;
@@ -322,6 +405,12 @@ module top #(
     logic [31:0] wb_lsu_data;
     logic [3:0]  wb_lsu_rd;
     logic        wb_lsu_write_enable;
+
+    logic [31:0] wb_feist_l;
+    logic [31:0] wb_feist_r;
+    logic [3:0]  wb_feist_rdL;
+    logic [3:0]  wb_feist_rdR;
+    logic        wb_feist_write_enable;
 
     // Escritura a x1 (el PC) detectada en WB.
     logic        wb_alu_writes_pc;
@@ -503,6 +592,34 @@ module top #(
     );
 
 
+    feist_decoder feist_decoder_inst (
+        .instr_feist_i(id_instr_feist),
+        .valid_feist_i(id_valid_feist),
+
+        // Operacion solicitada
+        .auth_en(id_feist_auth_en),
+        .logout_en(id_feist_logout_en),
+        .kstore_en(id_feist_kstore_en),
+        .fround_en(id_feist_fround_en),
+
+        .illegal_opcode(id_feist_illegal_opcode),
+
+        // Campos extraidos
+        .auth_rs1_o(id_feist_auth_rs1),
+        .auth_rs2_o(id_feist_auth_rs2),
+        .kstore_rs1_o(id_feist_kstore_rs1),
+
+        .rdL_o(id_feist_rdL),
+        .rdR_o(id_feist_rdR),
+        .rsL_o(id_feist_rsL),
+        .rsR_o(id_feist_rsR),
+
+        .key_o(id_feist_key),
+        .round_o(id_feist_round),
+        .mode_o(id_feist_mode)
+    );
+
+
     // ---------------------------------------------------------
     // REGISTRO ID/RR
     // ---------------------------------------------------------
@@ -525,7 +642,11 @@ module top #(
         id_valid_bru,
 
         // FEISTEL
-        id_instr_feist,
+        id_feist_auth_en, id_feist_logout_en,
+        id_feist_kstore_en, id_feist_fround_en,
+        id_feist_auth_rs1, id_feist_auth_rs2, id_feist_kstore_rs1,
+        id_feist_rdL, id_feist_rdR, id_feist_rsL, id_feist_rsR,
+        id_feist_key, id_feist_round, id_feist_mode,
         id_valid_feist
     };
 
@@ -558,7 +679,11 @@ module top #(
         rr_bru_opcode, rr_bru_rs1, rr_bru_rs2, rr_bru_offset,
         rr_bru_valid,
 
-        rr_instr_feist,
+        rr_feist_auth_en, rr_feist_logout_en,
+        rr_feist_kstore_en, rr_feist_fround_en,
+        rr_feist_auth_rs1, rr_feist_auth_rs2, rr_feist_kstore_rs1,
+        rr_feist_rdL, rr_feist_rdR, rr_feist_rsL, rr_feist_rsR,
+        rr_feist_key, rr_feist_round, rr_feist_mode,
         rr_feist_valid
     } = id_rr_data_out;
 
@@ -614,9 +739,42 @@ module top #(
     assign rr_bru_src1_value = (rr_bru_rs1 == PC_REG) ? rr_pc : regfile_rd_data[4];
     assign rr_bru_src2_value = (rr_bru_rs2 == PC_REG) ? rr_pc : regfile_rd_data[5];
 
-    // Puertos de lectura 6 y 7: reservados para la unidad Feistel.
-    assign regfile_rd_addr[6] = 4'b0;
-    assign regfile_rd_addr[7] = 4'b0;
+    // ===== LECTURAS DE LA UNIDAD FEISTEL (puertos 6 y 7) =====
+    // Las tres operaciones que leen registros son mutuamente
+    // excluyentes, asi que comparten el mismo par de puertos:
+    //   AUTH   : rs1 -> puerto 6, rs2 -> puerto 7
+    //   KSTORE : rs1 -> puerto 6
+    //   FROUND : rsL -> puerto 6, rsR -> puerto 7
+    always_comb begin
+        rr_feist_rd_addr_a = 4'b0;
+        rr_feist_rd_addr_b = 4'b0;
+
+        if (rr_feist_auth_en) begin
+            rr_feist_rd_addr_a = rr_feist_auth_rs1;
+            rr_feist_rd_addr_b = rr_feist_auth_rs2;
+        end
+        else if (rr_feist_kstore_en) begin
+            rr_feist_rd_addr_a = rr_feist_kstore_rs1;
+        end
+        else if (rr_feist_fround_en) begin
+            rr_feist_rd_addr_a = rr_feist_rsL;
+            rr_feist_rd_addr_b = rr_feist_rsR;
+        end
+    end
+
+    assign regfile_rd_addr[6] = rr_feist_rd_addr_a;
+    assign regfile_rd_addr[7] = rr_feist_rd_addr_b;
+
+    // x1 se sustituye por el PC igual que en el resto de unidades.
+    assign rr_feist_auth_val1 = (rr_feist_rd_addr_a == PC_REG) ? rr_pc
+                                                               : regfile_rd_data[6];
+    assign rr_feist_auth_val2 = (rr_feist_rd_addr_b == PC_REG) ? rr_pc
+                                                               : regfile_rd_data[7];
+
+    // KSTORE y FROUND reutilizan los mismos valores leidos.
+    assign rr_feist_kstore_val = rr_feist_auth_val1;
+    assign rr_feist_l_in       = rr_feist_auth_val1;
+    assign rr_feist_r_in       = rr_feist_auth_val2;
 
 
     // ---------------------------------------------------------
@@ -642,8 +800,13 @@ module top #(
         rr_bru_offset,
         rr_bru_valid,
 
-        // FEISTEL
-        rr_instr_feist,
+        // FEISTEL: los indices de fuente se sustituyen por sus valores.
+        rr_feist_auth_en, rr_feist_logout_en,
+        rr_feist_kstore_en, rr_feist_fround_en,
+        rr_feist_auth_val1, rr_feist_auth_val2, rr_feist_kstore_val,
+        rr_feist_l_in, rr_feist_r_in,
+        rr_feist_rdL, rr_feist_rdR,
+        rr_feist_key, rr_feist_round, rr_feist_mode,
         rr_feist_valid
     };
 
@@ -678,7 +841,12 @@ module top #(
         ex_bru_offset,
         ex_bru_valid,
 
-        ex_instr_feist,
+        ex_feist_auth_en, ex_feist_logout_en,
+        ex_feist_kstore_en, ex_feist_fround_en,
+        ex_feist_auth_val1, ex_feist_auth_val2, ex_feist_kstore_val,
+        ex_feist_l_in, ex_feist_r_in,
+        ex_feist_rdL, ex_feist_rdR,
+        ex_feist_key, ex_feist_round, ex_feist_mode,
         ex_feist_valid
     } = rr_ex_data_out;
 
@@ -752,6 +920,73 @@ module top #(
 
 
     // ---------------------------------------------------------
+    // UNIDAD FEISTEL4
+    // ---------------------------------------------------------
+
+    // La boveda cambia de estado (autorizacion y llaves) en el flanco
+    // de reloj de esta etapa, asi que sus enables deben filtrarse por
+    // la validez del bundle: un bundle descartado por un flush no
+    // puede autenticar ni escribir llaves.
+    assign ex_feist_active = ex_feist_valid & rr_ex_valid_out;
+
+    assign ex_feist_auth_req   = ex_feist_auth_en   & ex_feist_active;
+    assign ex_feist_logout_req = ex_feist_logout_en & ex_feist_active;
+    assign ex_feist_kstore_req = ex_feist_kstore_en & ex_feist_active;
+    assign ex_feist_fround_req = ex_feist_fround_en & ex_feist_active;
+
+    // Raiz de confianza: guarda las cuatro llaves de 128 bits y
+    // mantiene el estado de autenticacion. Su unico puerto de lectura
+    // va directo a crypto_unit, nunca al register file.
+    key_vault key_vault_inst (
+        .clk(clk_i),
+        .reset(rst_i),
+
+        .auth_en(ex_feist_auth_req),
+        .logout_en(ex_feist_logout_req),
+        .kstore_en(ex_feist_kstore_req),
+        .fround_en(ex_feist_fround_req),
+
+        // Credenciales presentadas por AUTH.
+        .auth_rs1(ex_feist_auth_val1),
+        .auth_rs2(ex_feist_auth_val2),
+
+        // Seleccion de llave y subllave.
+        .key_sel(ex_feist_key),
+        .round_sel(ex_feist_round),
+
+        // Valor que KSTORE guarda en la boveda.
+        .subkey_in(ex_feist_kstore_val),
+
+        .authorized(ex_vault_authorized),
+        .access_error(ex_vault_access_error),
+
+        // Conexion dedicada hacia la unidad criptografica.
+        .subkey_out(ex_vault_subkey),
+        .subkey_valid(ex_vault_subkey_valid)
+    );
+
+
+    crypto_unit crypto_unit_inst (
+        .fround_en(ex_feist_fround_req),
+        .mode_decrypt(ex_feist_mode),
+
+        // Mitades del bloque leidas del register file.
+        .l_in(ex_feist_l_in),
+        .r_in(ex_feist_r_in),
+
+        // Subllave entregada por la boveda.
+        .subkey_in(ex_vault_subkey),
+        .subkey_valid(ex_vault_subkey_valid),
+
+        .l_out(ex_feist_l_out),
+        .r_out(ex_feist_r_out),
+
+        .result_valid(ex_feist_result_valid),
+        .access_error(ex_feist_access_error)
+    );
+
+
+    // ---------------------------------------------------------
     // REGISTRO EX/WB
     // ---------------------------------------------------------
 
@@ -764,7 +999,12 @@ module top #(
 
         // LSU: solo los LOAD escriben al register file.
         ex_lsu_read_data, ex_lsu_data_reg_idx,
-        ex_lsu_reg_write & ex_lsu_valid & ~ex_lsu_access_error
+        ex_lsu_reg_write & ex_lsu_valid & ~ex_lsu_access_error,
+
+        // FEISTEL: solo una ronda autorizada produce escritura.
+        ex_feist_l_out, ex_feist_r_out,
+        ex_feist_rdL, ex_feist_rdR,
+        ex_feist_result_valid
     };
 
     pipeline_reg #(
@@ -789,7 +1029,11 @@ module top #(
         wb_alu_write_enable,
 
         wb_lsu_data, wb_lsu_rd,
-        wb_lsu_write_enable
+        wb_lsu_write_enable,
+
+        wb_feist_l, wb_feist_r,
+        wb_feist_rdL, wb_feist_rdR,
+        wb_feist_write_enable
     } = ex_wb_data_out;
 
 
@@ -821,14 +1065,22 @@ module top #(
     assign regfile_wr_en[1]   = wb_lsu_write_enable & ex_wb_valid_out &
                                 ~wb_lsu_writes_pc;
 
-    // Puertos de escritura 2 y 3: reservados para BRU y Feistel.
-    assign regfile_wr_addr[2] = 4'b0;
-    assign regfile_wr_data[2] = 32'b0;
-    assign regfile_wr_en[2]   = 1'b0;
+    // Puertos de escritura 2 y 3: las dos mitades que produce una
+    // ronda Feistel. Nunca transportan material de llave: solo las
+    // salidas de crypto_unit, jamas el contenido de la boveda.
+    //
+    // Una ronda Feistel no puede escribir x1: redirigir el PC con el
+    // resultado de un cifrado no tiene sentido y el camino de
+    // escritura al PC solo admite un slot por bundle.
+    assign regfile_wr_addr[2] = wb_feist_rdL;
+    assign regfile_wr_data[2] = wb_feist_l;
+    assign regfile_wr_en[2]   = wb_feist_write_enable & ex_wb_valid_out &
+                                (wb_feist_rdL != PC_REG);
 
-    assign regfile_wr_addr[3] = 4'b0;
-    assign regfile_wr_data[3] = 32'b0;
-    assign regfile_wr_en[3]   = 1'b0;
+    assign regfile_wr_addr[3] = wb_feist_rdR;
+    assign regfile_wr_data[3] = wb_feist_r;
+    assign regfile_wr_en[3]   = wb_feist_write_enable & ex_wb_valid_out &
+                                (wb_feist_rdR != PC_REG);
 
 
     // =========================================================

@@ -9,7 +9,7 @@ SRC = src/top.sv src/fetch.sv src/dispatch.sv src/instruction_memory.sv \
       src/crypto_unit.sv src/feist_decoder.sv src/key_vault.sv \
       src/pipeline_reg.sv src/pipeline_control.sv
 
-.PHONY: all fetch dispatch top tb_top test clean
+.PHONY: all fetch dispatch top tb_top feistel test clean
 
 all: test
 
@@ -28,7 +28,11 @@ tb_top:
 	$(IVERILOG) $(FLAGS) -s tb_top -o sim_tb_top tb/tb_top.sv $(SRC)
 	$(VVP) sim_tb_top
 
-test: fetch dispatch tb_top
+feistel:
+	$(IVERILOG) $(FLAGS) -s tb_feistel -o sim_feistel tb/tb_feistel.sv $(SRC)
+	$(VVP) sim_feistel
+
+test: fetch dispatch tb_top feistel
 
 clean:
-	rm -f sim_fetch sim_dispatch sim_top sim_tb_top
+	rm -f sim_fetch sim_dispatch sim_top sim_tb_top sim_feistel
