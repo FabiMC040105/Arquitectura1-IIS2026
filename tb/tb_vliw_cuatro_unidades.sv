@@ -188,7 +188,7 @@ module tb_vliw_cuatro_unidades;
         if (vio_paralelismo !== 1'b1)
             $fatal(1, "ERROR: no hubo ejecucion paralela");
 
-        $display("PASS: Tres unidades activas en EX");
+        $display("PASS: Cuatro unidades activas en EX");
 
         // PRUEBA 4: ALU
         if (dut.regfile_inst.regs[11] !== 32'd9)
@@ -218,7 +218,7 @@ module tb_vliw_cuatro_unidades;
         $display("PASS: x0 permanece en cero");
 
         $display("----------------------------------");
-        $display("PRUEBA DE TRES UNIDADES SUPERADA");
+        $display("PRUEBA DE CUATRO UNIDADES SUPERADA");
         $display("----------------------------------");
 
         $finish;
