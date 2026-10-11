@@ -222,6 +222,9 @@ module tb_feistel;
     end
 
     initial begin
+        $display("========================================");
+        $display("Inicio de pruebas de FEISTEL");
+        $display("========================================");
         errores = 0;
         rst_i   = 1'b1;
         stall_i = 1'b0;
@@ -461,7 +464,9 @@ module tb_feistel;
         if (errores != 0)
             $fatal(1, "FALLARON %0d PRUEBAS DE FEISTEL", errores);
 
-        $display("TODAS LAS PRUEBAS DE FEISTEL PASARON");
+        $display("========================================");
+        $display("Pruebas de FEISTEL finalizadas: TODAS PASARON");
+        $display("========================================");
         $finish;
     end
 

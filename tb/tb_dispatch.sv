@@ -48,7 +48,9 @@ module tb_dispatch;
 
     initial begin
 
-        $display("Iniciando pruebas de Dispatch");
+        $display("========================================");
+        $display("Inicio de pruebas de DISPATCH");
+        $display("========================================");
 
         // PRUEBA 1:
         // Compruebo que cada instruccion llegue completa
@@ -84,7 +86,7 @@ module tb_dispatch;
         if (valid_o !== 1'b1)
             $fatal(1, "Error: el bundle deberia ser valido");
 
-        $display("Prueba 1 aprobada: separacion de slots y PC");
+        $display("PASS: separacion de slots y PC");
 
 
         // PRUEBA 2:
@@ -103,7 +105,7 @@ module tb_dispatch;
         if (valid_feist_o !== 1'b1)
             $fatal(1, "Error: validez de FEIST incorrecta");
 
-        $display("Prueba 2 aprobada: validez de los slots");
+        $display("PASS: validez de los slots");
 
 
         // PRUEBA 3:
@@ -132,7 +134,7 @@ module tb_dispatch;
         if (valid_o !== 1'b1)
             $fatal(1, "Error: valid_o deberia seguir activo");
 
-        $display("Prueba 3 aprobada: deteccion de NOP");
+        $display("PASS: deteccion de NOP");
 
 
         // PRUEBA 4:
@@ -169,9 +171,12 @@ module tb_dispatch;
             valid_feist_o !== 1'b0)
             $fatal(1, "Error: las validez de los slots deberian ser cero");
 
-        $display("Prueba 4 aprobada: bundle invalido");
+        $display("PASS: bundle invalido");
 
-        $display("Todas las pruebas fueron aprobadas");
+        
+        $display("========================================");
+        $display("Pruebas de DISPATCH Finalizadas: TODAS PASARON");
+        $display("========================================");
         $finish;
 
     end
