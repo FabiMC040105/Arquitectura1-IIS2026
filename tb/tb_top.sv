@@ -25,7 +25,8 @@ module tb_top;
     logic dispatch_valid_o;
 
     top #(
-        .IMEM_WORDS(64)
+        .IMEM_WORDS(64),
+        .PROGRAM_FILE("program_test.mem")
     ) dut (
         .clk_i(clk_i),
         .rst_i(rst_i),
