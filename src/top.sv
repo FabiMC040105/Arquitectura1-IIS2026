@@ -14,7 +14,7 @@
 module top #(
     parameter integer IMEM_WORDS = 16384,
     parameter logic [31:0] RESET_PC = 32'h00000000,
-    parameter PROGRAM_FILE = "program.mem"
+    parameter PROGRAM_FILE = "program_test.mem"
 ) (
 
     // ---------------------------------------------------------
