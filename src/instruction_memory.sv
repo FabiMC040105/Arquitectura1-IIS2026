@@ -72,6 +72,9 @@ module instruction_memory #(
     // Lectura
     // ============================================================
 
+    logic [3:0] addr_dir;
+    assign addr_dir = addr[3:0];
+
     always_comb begin
 
         bundle_out  = 128'b0;
@@ -93,7 +96,7 @@ module instruction_memory #(
         // ...
         //
 
-        if (addr[3:0] != 4'b0000) begin
+        if (addr_dir != 4'b0000) begin
 
             access_error = 1'b1;
 

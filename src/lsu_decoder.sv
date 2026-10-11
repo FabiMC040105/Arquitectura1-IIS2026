@@ -1,3 +1,5 @@
+`timescale 1ns/1ps
+
 module lsu_decoder (
     input  logic [31:0] instr,
 
@@ -25,41 +27,18 @@ module lsu_decoder (
 
     logic [1:0] opcode;
 
-
-    // ============================================================
-    // Extracción de campos
-    // ============================================================
-    //
-    // Formato LOAD:
-    //
-    // [31:22] = 0
-    // [21:10] = offset
-    // [ 9: 6] = rb
-    // [ 5: 2] = rd
-    // [ 1: 0] = opcode
-    //
-    // Formato STORE:
-    //
-    // [31:22] = 0
-    // [21:10] = offset
-    // [ 9: 6] = rb
-    // [ 5: 2] = rs1
-    // [ 1: 0] = opcode
-    //
-
-    always_comb begin
-
-        opcode       = instr[1:0];
-        data_reg_idx = instr[5:2];
-        base_reg_idx = instr[9:6];
-        offset       = instr[21:10];
-
-    end
-
+    assign opcode       = instr[1:0];
+    assign data_reg_idx = instr[5:2];
+    assign base_reg_idx = instr[9:6];
+    assign offset       = instr[21:10];
 
     // ============================================================
     // Decodificación
     // ============================================================
+
+    logic reserved_ok;
+    assign reserved_ok = (instr[31:22] == 10'b0);
+
 
     always_comb begin
 
@@ -79,7 +58,7 @@ module lsu_decoder (
         // Los bits [31:22] deben ser cero.
         //
 
-        if (instr[31:22] != 10'b0) begin
+        if (!reserved_ok) begin
 
             illegal_instr = 1'b1;
 
