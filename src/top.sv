@@ -14,7 +14,8 @@
 module top #(
     parameter integer IMEM_WORDS = 16384,
     parameter logic [31:0] RESET_PC = 32'h00000000,
-    parameter PROGRAM_FILE = "program.mem"
+    parameter PROGRAM_FILE = "program_test.mem",
+    parameter DATA_FILE = "input.mem"
 ) (
 
     // ---------------------------------------------------------
@@ -890,7 +891,9 @@ module top #(
     );
 
 
-    data_memory data_memory_inst (
+    data_memory #(
+        .DATA_FILE(DATA_FILE)
+    ) data_memory_inst (
         .clk(clk_i),
         .rst(rst_i),
 
