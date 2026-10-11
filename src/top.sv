@@ -14,7 +14,8 @@
 module top #(
     parameter integer IMEM_WORDS = 16384,
     parameter logic [31:0] RESET_PC = 32'h00000000,
-    parameter PROGRAM_FILE = "program.mem"
+    parameter PROGRAM_FILE = "program_test.mem",
+    parameter DATA_FILE = "input.mem"
 ) (
 
     // ---------------------------------------------------------
@@ -880,7 +881,7 @@ module top #(
         // Una operacion de memoria solo se emite si el bundle que
         // la contiene sigue siendo valido en esta etapa.
         .load_enable(ex_lsu_load_enable & ex_lsu_valid & rr_ex_valid_out),
-        .store_enable(ex_lsu_store_enable & ex_lsu_valid & rr_ex_valid_out),
+        .store_enable(ex_lsu_store_enable & ex_lsu_valid & rr_ex_valid_out & ~stall_i),
 
         .effective_addr(ex_lsu_effective_addr),
         .mem_write_data(ex_lsu_mem_write_data),
@@ -890,7 +891,9 @@ module top #(
     );
 
 
-    data_memory data_memory_inst (
+    data_memory #(
+        .DATA_FILE(DATA_FILE)
+    ) data_memory_inst (
         .clk(clk_i),
         .rst(rst_i),
 
@@ -931,7 +934,7 @@ module top #(
     // de reloj de esta etapa, asi que sus enables deben filtrarse por
     // la validez del bundle: un bundle descartado por un flush no
     // puede autenticar ni escribir llaves.
-    assign ex_feist_active = ex_feist_valid & rr_ex_valid_out;
+    assign ex_feist_active = ex_feist_valid & rr_ex_valid_out & ~stall_i;
 
     assign ex_feist_auth_req   = ex_feist_auth_en   & ex_feist_active;
     assign ex_feist_logout_req = ex_feist_logout_en & ex_feist_active;
