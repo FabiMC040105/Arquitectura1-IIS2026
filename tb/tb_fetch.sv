@@ -1,145 +1,120 @@
 `timescale 1ns/1ps
 
-module tb_top;
+module tb_fetch;
 
-    logic clk_i;
-    logic rst_i;
+    // Memoria pequena para que el limite superior sea facil de alcanzar.
+    // 64 palabras * 4 bytes = 256 bytes = 16 bundles.
+    localparam integer IMEM_WORDS = 64;
+    localparam integer MEM_BYTES  = IMEM_WORDS * 4;
 
-    logic stall_i;
-    logic branch_taken_ex_i;
-    logic [31:0] branch_target_ex_i;
-    logic pc_write_wb_i;
-    logic [31:0] pc_write_data_wb_i;
-
-    logic [31:0] pc_o;
+    logic [31:0]  pc_i;
     logic [127:0] bundle_o;
-    logic fetch_valid_o;
-    logic fetch_access_error_o;
+    logic         valid_o;
+    logic         access_error_o;
 
-    logic [127:0] bundle_if_id_o;
-    logic [31:0] pc_if_id_o;
-    logic valid_if_id_o;
+    integer errores = 0;
 
-    logic [31:0] instr_alu_o;
-    logic [31:0] instr_lsu_o;
-    logic [31:0] instr_bru_o;
-    logic [31:0] instr_feist_o;
-    logic [31:0] dispatch_pc_o;
-
-    logic valid_alu_o;
-    logic valid_lsu_o;
-    logic valid_bru_o;
-    logic valid_feist_o;
-    logic dispatch_valid_o;
-
-    logic enable_if_id_o;
-    logic enable_id_rr_o;
-    logic enable_rr_ex_o;
-    logic enable_ex_wb_o;
-
-    logic flush_if_id_o;
-    logic flush_id_rr_o;
-    logic flush_rr_ex_o;
-    logic flush_ex_wb_o;
-
-    top #(
-        .IMEM_WORDS(16384),
-        .RESET_PC(32'h00000000),
-        .PROGRAM_FILE("program.mem")
+    fetch #(
+        .IMEM_WORDS(IMEM_WORDS),
+        .PROGRAM_FILE("program_test.mem")
     ) dut (
-        .clk_i(clk_i),
-        .rst_i(rst_i),
-
-        .stall_i(stall_i),
-        .branch_taken_ex_i(branch_taken_ex_i),
-        .branch_target_ex_i(branch_target_ex_i),
-        .pc_write_wb_i(pc_write_wb_i),
-        .pc_write_data_wb_i(pc_write_data_wb_i),
-
-        .pc_o(pc_o),
+        .pc_i(pc_i),
         .bundle_o(bundle_o),
-        .fetch_valid_o(fetch_valid_o),
-        .fetch_access_error_o(fetch_access_error_o),
-
-        .bundle_if_id_o(bundle_if_id_o),
-        .pc_if_id_o(pc_if_id_o),
-        .valid_if_id_o(valid_if_id_o),
-
-        .instr_alu_o(instr_alu_o),
-        .instr_lsu_o(instr_lsu_o),
-        .instr_bru_o(instr_bru_o),
-        .instr_feist_o(instr_feist_o),
-        .dispatch_pc_o(dispatch_pc_o),
-
-        .valid_alu_o(valid_alu_o),
-        .valid_lsu_o(valid_lsu_o),
-        .valid_bru_o(valid_bru_o),
-        .valid_feist_o(valid_feist_o),
-        .dispatch_valid_o(dispatch_valid_o),
-
-        .enable_if_id_o(enable_if_id_o),
-        .enable_id_rr_o(enable_id_rr_o),
-        .enable_rr_ex_o(enable_rr_ex_o),
-        .enable_ex_wb_o(enable_ex_wb_o),
-
-        .flush_if_id_o(flush_if_id_o),
-        .flush_id_rr_o(flush_id_rr_o),
-        .flush_rr_ex_o(flush_rr_ex_o),
-        .flush_ex_wb_o(flush_ex_wb_o)
+        .valid_o(valid_o),
+        .access_error_o(access_error_o)
     );
 
-    initial begin
-        clk_i = 1'b0;
-    end
-
-    always #5 clk_i = ~clk_i;
-
-    initial begin
-        rst_i = 1'b1;
-
-        stall_i = 1'b0;
-        branch_taken_ex_i = 1'b0;
-        branch_target_ex_i = 32'b0;
-        pc_write_wb_i = 1'b0;
-        pc_write_data_wb_i = 32'b0;
-
-        $display("========================================");
-        $display("Inicio de pruebas de TOP");
-        $display("========================================");
-
-        repeat (2) @(posedge clk_i);
-        @(negedge clk_i);
-        rst_i = 1'b0;
-
-        repeat (4) begin
-            @(posedge clk_i);
+    // Comprueba un acceso valido y el bundle esperado.
+    task automatic revisar_bundle(
+        input string          nombre,
+        input logic [31:0]    pc,
+        input logic [127:0]   bundle_esperado
+    );
+        begin
+            pc_i = pc;
             #1;
 
-            $display(
-                "PC=%h | IF/ID PC=%h | Fetch valid=%b | IF/ID valid=%b | Dispatch valid=%b",
-                pc_o,
-                pc_if_id_o,
-                fetch_valid_o,
-                valid_if_id_o,
-                dispatch_valid_o
-            );
-
-            if (fetch_access_error_o !== 1'b0) begin
-                $fatal(1, "ERROR: Fetch reporto un acceso invalido");
+            if (access_error_o !== 1'b0 || valid_o !== 1'b1) begin
+                errores = errores + 1;
+                $display("FALLO %s: PC=%h valid=%b access_error=%b (se esperaba acceso valido)",
+                         nombre, pc, valid_o, access_error_o);
             end
-
-            if (pc_o[3:0] !== 4'b0000) begin
-                $fatal(1, "ERROR: PC desalineado");
+            else if (bundle_o !== bundle_esperado) begin
+                errores = errores + 1;
+                $display("FALLO %s: PC=%h bundle=%h (se esperaba %h)",
+                         nombre, pc, bundle_o, bundle_esperado);
             end
-
-            if (valid_if_id_o && dispatch_pc_o !== pc_if_id_o) begin
-                $fatal(1, "ERROR: el PC de Dispatch no coincide con IF/ID");
+            else begin
+                $display("PASS    %s: PC=%h bundle=%h", nombre, pc, bundle_o);
             end
         end
+    endtask
+
+    // Comprueba que un acceso sea rechazado.
+    task automatic revisar_error(
+        input string       nombre,
+        input logic [31:0] pc
+    );
+        begin
+            pc_i = pc;
+            #1;
+
+            if (access_error_o !== 1'b1 || valid_o !== 1'b0) begin
+                errores = errores + 1;
+                $display("FALLO %s: PC=%h valid=%b access_error=%b (se esperaba acceso invalido)",
+                         nombre, pc, valid_o, access_error_o);
+            end
+            else begin
+                $display("PASS   %s: PC=%h rechazado correctamente", nombre, pc);
+            end
+        end
+    endtask
+
+    initial begin
+        pc_i = 32'b0;
+        #1;
 
         $display("========================================");
-        $display("Pruebas basicas de TOP finalizadas");
+        $display("Inicio de pruebas de FETCH");
         $display("========================================");
+
+        // Los cuatro bundles cargados desde program_test.mem.
+        revisar_bundle("bundle 0", 32'h00000000,
+                       128'h44444444333333332222222211111111);
+        revisar_bundle("bundle 1 (NOP)", 32'h00000010,
+                       128'h00000000000000000000000000000000);
+        revisar_bundle("bundle 2", 32'h00000020,
+                       128'hDDDDDDDDCCCCCCCCBBBBBBBBAAAAAAAA);
+        revisar_bundle("bundle 3", 32'h00000030,
+                       128'h0123456789ABCDEF13579BDF2468ACE0);
+
+        // Resto de la memoria inicializada en NOP.
+        revisar_bundle("bundle 4 (sin cargar)", 32'h00000040, 128'b0);
+
+        // Ultimo bundle valido de la memoria.
+        revisar_bundle("ultimo bundle", MEM_BYTES - 16, 128'b0);
+
+        // PC desalineado: un bundle ocupa 16 bytes.
+        revisar_error("PC desalineado +4",  32'h00000004);
+        revisar_error("PC desalineado +8",  32'h00000008);
+        revisar_error("PC desalineado +1",  32'h00000021);
+
+        // PC fuera del rango de la memoria.
+        revisar_error("PC fuera de rango",  MEM_BYTES);
+        revisar_error("PC muy fuera",       32'hFFFF0000);
+
+        $display("========================================");
+        if (errores == 0) begin
+            $display("Pruebas de FETCH finalizadas: TODAS PASARON");
+        end
+        else begin
+            $display("Pruebas de FETCH finalizadas: %0d FALLARON", errores);
+        end
+        $display("========================================");
+
+        if (errores != 0) begin
+            $fatal(1, "Hubo fallos en las pruebas de FETCH");
+        end
 
         $finish;
     end

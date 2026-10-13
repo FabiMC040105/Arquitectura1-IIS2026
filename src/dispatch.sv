@@ -26,6 +26,25 @@ module dispatch (
 );
 
     // Este modulo es combinacional: su funcion es separar el bundle y pasar las instrucciones completas a los decoders correspondientes.
+    logic [31:0] bundle_slice_1;
+    logic [31:0] bundle_slice_2;
+    logic [31:0] bundle_slice_3;
+    logic [31:0] bundle_slice_4;
+
+    logic [3:0] opcode_alu;
+    logic [1:0] opcode_lsu;
+    logic [2:0] opcode_bru;
+    logic [2:0] opcode_feist;
+
+    assign bundle_slice_1 = bundle_i[31:0]; 
+    assign bundle_slice_2 = bundle_i[63:32]; 
+    assign bundle_slice_3 = bundle_i[95:64]; 
+    assign bundle_slice_4 = bundle_i[127:96]; 
+    assign opcode_alu = bundle_slice_1[3:0];
+    assign opcode_lsu = bundle_slice_2[1:0];
+    assign opcode_bru = bundle_slice_3[2:0];
+    assign opcode_feist = bundle_slice_4[2:0];
+
     always_comb begin
 
         // Valores iniciales de las salidas.
@@ -46,10 +65,10 @@ module dispatch (
         if (valid_i) begin
 
             // Se separan los slots sin extraer sus campos internos.
-            instr_alu_o   = bundle_i[31:0];
-            instr_lsu_o   = bundle_i[63:32];
-            instr_bru_o   = bundle_i[95:64];
-            instr_feist_o = bundle_i[127:96];
+            instr_alu_o   = bundle_slice_1;
+            instr_lsu_o   = bundle_slice_2;
+            instr_bru_o   = bundle_slice_3;
+            instr_feist_o = bundle_slice_4;
 
             // Se conserva el PC del bundle.
             pc_o = pc_i;
@@ -60,16 +79,16 @@ module dispatch (
             // Un opcode en cero representa NOP.
             // Cada unidad tiene su propio ancho de opcode.
             valid_alu_o =
-                (instr_alu_o[3:0] != 4'b0000);
+                (opcode_alu != 4'b0000);
 
             valid_lsu_o =
-                (instr_lsu_o[1:0] != 2'b00);
+                (opcode_lsu != 2'b00);
 
             valid_bru_o =
-                (instr_bru_o[2:0] != 3'b000);
+                (opcode_bru != 3'b000);
 
             valid_feist_o =
-                (instr_feist_o[2:0] != 3'b000);
+                (opcode_feist != 3'b000);
 
         end
     end

@@ -1,3 +1,5 @@
+`timescale 1ns/1ps
+
 module lsu (
     input  logic [31:0] base_addr,
     input  logic [11:0] offset,
@@ -15,30 +17,7 @@ module lsu (
 );
 
     logic [31:0] offset_extended;
-
-
-    // ============================================================
-    // Extensión de signo del offset
-    // ============================================================
-    //
-    // El offset tiene 12 bits y está representado en complemento
-    // a dos.
-    //
-    // Ejemplo:
-    //
-    // offset = 12'hFFC = -4
-    //
-    // Se extiende a:
-    //
-    // 32'hFFFFFFFC
-    //
-
-    always_comb begin
-        offset_extended = {
-            {20{offset[11]}},
-            offset
-        };
-    end
+    assign offset_extended = {{20{offset[11]}},offset};
 
 
     // ============================================================

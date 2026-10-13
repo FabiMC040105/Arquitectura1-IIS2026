@@ -6,7 +6,7 @@ module fetch #(
     parameter integer IMEM_WORDS = 16384,
 
     // Archivo que contiene los bundles de instrucciones.
-    parameter PROGRAM_FILE = "program.mem"
+    parameter PROGRAM_FILE = "program_test.mem"
 ) (
     // PC controlado por pipeline_control.
     input logic [31:0] pc_i,

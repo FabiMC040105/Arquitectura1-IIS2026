@@ -1,3 +1,4 @@
+`timescale 1ns/1ps
 
 module feist_decoder (
     // Instrucción recibida del dispatcher general

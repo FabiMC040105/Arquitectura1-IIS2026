@@ -1,3 +1,4 @@
+`timescale 1ns/1ps
 
 module register_file #(
     parameter WIDTH = 32,

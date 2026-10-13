@@ -86,6 +86,9 @@ module tb_top;
     integer ciclo;
 
     initial begin
+        $display("========================================");
+        $display("Inicio de pruebas de TOP");
+        $display("========================================");
         rst_i   = 1'b1;
         stall_i = 1'b0;
 
@@ -97,8 +100,6 @@ module tb_top;
             $fatal(1, "ERROR: PC incorrecto despues del reset");
 
         $display("PASS: reset deja el PC en 0x0");
-        $display("DEBUG: x2 despues de reset = %h", dut.regfile_inst.regs[2]);
-        $display("DEBUG: bundle 0 = %h", dut.fetch_inst.instruction_memory_inst.memory[0]);
 
         if (dut.if_access_error !== 1'b0)
             $fatal(1, "ERROR: Fetch detecto un error de acceso inesperado");
@@ -172,7 +173,9 @@ module tb_top;
 
         if (instr_feist_o !== dut.id_bundle[127:96])
             $fatal(1, "ERROR: el slot FEIST no coincide con el bundle recibido");
-        $display("TODAS LAS PRUEBAS DE TOP PASARON");
+        $display("========================================");
+        $display("Pruebas de TOP finalizadas: TODAS PASARON");
+        $display("========================================");
         $finish;
     end
 

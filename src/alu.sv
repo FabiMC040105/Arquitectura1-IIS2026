@@ -1,3 +1,5 @@
+`timescale 1ns/1ps
+
 module alu #(parameter WIDTH = 32) (
   input  logic [WIDTH-1:0] op1, 
   input  logic [WIDTH-1:0] op2,
@@ -19,6 +21,9 @@ module alu #(parameter WIDTH = 32) (
   localparam SRLI = 3'b010;
   localparam SLLI = 3'b011;
 
+  logic imm_1;
+  assign imm_1 = imm[11];
+
   always_comb begin
     data_out = '0;
     case (imm_op)
@@ -29,14 +34,13 @@ module alu #(parameter WIDTH = 32) (
           OR:   data_out = op1 | op2;
           XOR:  data_out = op1 ^ op2;
           AND:  data_out = op1 & op2;
-          SLT:  data_out = ($signed(op1) < $signed(op2)) ?
-                             {{(WIDTH-1){1'b0}}, 1'b1} : '0;
+          SLT:  data_out = ($signed(op1) < $signed(op2)) ? {{(WIDTH-1){1'b0}}, 1'b1} : '0;
           default: data_out = '0;
         endcase
       end
       1'b1: begin
         case (opcode)
-          ADDI: data_out = $signed(op1) + $signed({{20{imm[11]}}, imm});
+          ADDI: data_out = $signed(op1) + $signed({{20{imm_1}}, imm});
           SRLI: data_out = op1 >> imm;
           SLLI: data_out = op1 << imm;
           default: data_out = '0;
