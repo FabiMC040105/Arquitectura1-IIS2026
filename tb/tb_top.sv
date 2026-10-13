@@ -24,8 +24,15 @@ module tb_top;
     logic valid_feist_o;
     logic dispatch_valid_o;
 
+    // Señales auxiliares para depurar la memoria.
+    // Solo se necesitan si después las conectamos a señales internas.
+    logic [31:0] mem_addr_debug;
+    logic [31:0] mem_read_debug;
+
     top #(
-        .IMEM_WORDS(64)
+        .IMEM_WORDS(64),
+        .PROGRAM_FILE("program_test.mem"),
+        .DATA_FILE("input.mem")
     ) dut (
         .clk_i(clk_i),
         .rst_i(rst_i),
@@ -84,24 +91,6 @@ module tb_top;
         $display("========================================");
         rst_i   = 1'b1;
         stall_i = 1'b0;
-
-        // Programa de prueba. Solo se usa el slot ALU.
-        //   bundle 0: x2  = x0 + 5
-        //   bundle 1: x3  = x0 + 7
-        //   bundle 2: NOP (deja que x2 y x3 lleguen a WB)
-        //   bundle 3: NOP
-        //   bundle 4: x4  = x2 + x3
-        dut.fetch_inst.instruction_memory_inst.memory[0] =
-            {96'b0, alu_i(12'd5, 4'd0, 4'd2, ADDI)};
-
-        dut.fetch_inst.instruction_memory_inst.memory[1] =
-            {96'b0, alu_i(12'd7, 4'd0, 4'd3, ADDI)};
-
-        dut.fetch_inst.instruction_memory_inst.memory[2] = 128'b0;
-        dut.fetch_inst.instruction_memory_inst.memory[3] = 128'b0;
-
-        dut.fetch_inst.instruction_memory_inst.memory[4] =
-            {96'b0, alu_r(4'd3, 4'd2, 4'd4, ADD)};
 
         // 1. El reset deja el PC en su valor inicial.
         @(posedge clk_i);

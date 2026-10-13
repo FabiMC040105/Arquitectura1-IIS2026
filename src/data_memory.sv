@@ -1,6 +1,7 @@
 `timescale 1ns/1ps
 module data_memory #(
-    parameter int MEM_BYTES = 65536
+    parameter int MEM_BYTES = 65536,
+    parameter DATA_FILE = "input.mem" //Para cargar archivos
 )(
     input  logic        clk,
     input  logic        rst,
@@ -30,8 +31,12 @@ module data_memory #(
         for (i = 0; i < MEM_BYTES; i = i + 1) begin
             memory[i] = 8'h00;
         end
-    end
 
+        if (DATA_FILE != "") begin
+            $display("Cargando archivo de datos: %s", DATA_FILE);
+            $readmemh(DATA_FILE, memory);
+        end
+    end
 
     // ============================================================
     // Escritura
@@ -102,7 +107,7 @@ module data_memory #(
         access_error = 1'b0;
 
         if (mem_read || mem_write) begin
-            if (addr > (MEM_BYTES - 4)) begin
+            if ((addr > (MEM_BYTES - 4)) || (addr[1:0] != 2'b00)) begin
                 access_error = 1'b1;
             end
         end

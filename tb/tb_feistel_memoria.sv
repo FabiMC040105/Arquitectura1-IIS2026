@@ -12,6 +12,36 @@ module tb_feistel_memoria;
     wire [127:0] bundle_o;
     wire fetch_valid_o;
 
+    // Observar los valores reales almacenados en memoria
+    wire [31:0] mem_cifrado_L = {
+        dut.data_memory_inst.memory[3],
+        dut.data_memory_inst.memory[2],
+        dut.data_memory_inst.memory[1],
+        dut.data_memory_inst.memory[0]
+    };
+
+    wire [31:0] mem_cifrado_R = {
+        dut.data_memory_inst.memory[7],
+        dut.data_memory_inst.memory[6],
+        dut.data_memory_inst.memory[5],
+        dut.data_memory_inst.memory[4]
+    };
+
+    wire [31:0] mem_descifrado_L = {
+        dut.data_memory_inst.memory[11],
+        dut.data_memory_inst.memory[10],
+        dut.data_memory_inst.memory[9],
+        dut.data_memory_inst.memory[8]
+    };
+
+    wire [31:0] mem_descifrado_R = {
+        dut.data_memory_inst.memory[15],
+        dut.data_memory_inst.memory[14],
+        dut.data_memory_inst.memory[13],
+        dut.data_memory_inst.memory[12]
+    };
+
+
     integer i;
     integer rondas_vistas = 0;
 
@@ -86,7 +116,41 @@ module tb_feistel_memoria;
             rondas_vistas <= rondas_vistas + 1;
     end
 
+        // Mostrar en terminal cada escritura en memoria
+    always @(posedge clk_i) begin
+        if (!rst_i &&
+            dut.ex_lsu_mem_write &&
+            !dut.ex_lsu_access_error) begin
+
+            $display(
+                "STORE: direccion=%0d, dato=%08h",
+                dut.ex_lsu_effective_addr,
+                dut.ex_lsu_mem_write_data
+            );
+        end
+    end
+
     initial begin
+
+    // Generar archivo de ondas para GTKWave
+    $dumpfile("feistel_memoria.vcd");
+
+    $dumpvars(0, clk_i, rst_i, stall_i);
+
+    $dumpvars(0,
+        dut.ex_lsu_mem_write,
+        dut.ex_lsu_effective_addr,
+        dut.ex_lsu_mem_write_data,
+        dut.ex_feist_result_valid
+    );
+
+    $dumpvars(0,
+        mem_cifrado_L,
+        mem_cifrado_R,
+        mem_descifrado_L,
+        mem_descifrado_R
+    );
+
 
         rst_i = 1;
         stall_i = 0;
