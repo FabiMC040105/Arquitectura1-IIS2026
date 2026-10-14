@@ -8,10 +8,11 @@ module alu_decoder #(parameter WIDTH = 32) (
   output logic [3:0]  rs2,
   output logic [2:0]  opcode,
   output logic        imm_op,
-  output logic [11:0] imm
+  output logic [11:0] imm,
+  output logic        illegal_o
 );
 
-//Evita errores por sensibilidad de bits en compilacion
+// Evita errores por sensibilidad de bits en compilacion
   logic [2:0] instr_slice_1;
   logic instr_slice_2;
   logic [3:0] instr_slice_3;
@@ -31,7 +32,16 @@ module alu_decoder #(parameter WIDTH = 32) (
   assign rd      = instr_slice_3;
   assign rs1     = instr_slice_4;
 
+  logic reserved_ok;
+  assign reserved_ok = (instr_alu_o[31:23] == 10'b0); 
+
   always_comb begin
+    illegal_o = 1'b0;
+    // Los bits reservados deben ser cero
+    if (!reserved_ok) begin
+        illegal_o = 1'b0;
+    end
+
     rs2 = '0;
     imm = '0;
 

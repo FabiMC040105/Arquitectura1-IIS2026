@@ -17,58 +17,26 @@ module top #(
     parameter PROGRAM_FILE = "program_test.mem",
     parameter DATA_FILE = "input.mem"
 ) (
-
-    // ---------------------------------------------------------
-    // ENTRADAS DE RELOJ Y CONTROL
-    // ---------------------------------------------------------
-
     input logic clk_i,          // Reloj del procesador
     input logic rst_i,          // Reinicio del procesador
     input logic stall_i,        // Detiene el avance del pipeline
 
-    // ---------------------------------------------------------
-    // SALIDAS DE OBSERVACION DE LA ETAPA IF
-    // ---------------------------------------------------------
+    output logic [31:0] pc_o, // Direccion del bundle que Fetch lee.
+    output logic [127:0] bundle_o,// Bundle completo de 128 bits que sale de Fetch.
+    output logic fetch_valid_o, // Indica si Fetch esta entregando un bundle valido.
 
-    // Direccion del bundle que Fetch esta leyendo.
-    output logic [31:0] pc_o,
-
-    // Bundle completo de 128 bits que sale de Fetch.
-    // Contiene cuatro slots de 32 bits.
-    output logic [127:0] bundle_o,
-
-    // Indica si Fetch esta entregando un bundle valido.
-    output logic fetch_valid_o,
-
-    // ---------------------------------------------------------
-    // INSTRUCCIONES SEPARADAS POR DISPATCH (ETAPA ID)
-    // ---------------------------------------------------------
-
-    // Instruccion de 32 bits destinada al slot ALU.
     output logic [31:0] instr_alu_o,
-
-    // Instruccion destinada al slot de acceso a memoria.
     output logic [31:0] instr_lsu_o,
-
-    // Instruccion destinada al slot de control de flujo.
     output logic [31:0] instr_bru_o,
-
-    // Instruccion destinada al slot criptografico Feistel4.
     output logic [31:0] instr_feist_o,
 
-    // ---------------------------------------------------------
-    // INDICADORES DE VALIDEZ DE LOS SLOTS (ETAPA ID)
-    // ---------------------------------------------------------
-
-    // Indica si el slot correspondiente contiene una operacion
-    // distinta de NOP dentro de un bundle valido.
+    // Indica si el slot correspondiente contiene una operacion distinta de NOP dentro de un bundle valido.
     output logic valid_alu_o,
     output logic valid_lsu_o,
     output logic valid_bru_o,
     output logic valid_feist_o,
 
-    // Indica que Dispatch recibio un bundle valido.
-    // Puede valer 1 aunque todos los slots sean NOP.
+    // Indica que Dispatch recibio un bundle valido. Puede valer 1 aunque todos los slots sean NOP.
     output logic dispatch_valid_o
 );
 
@@ -76,8 +44,7 @@ module top #(
     // ANCHOS DE LOS REGISTROS DE PIPELINE
     // =========================================================
 
-    // IF/ID transporta el bundle completo y su PC.
-    localparam integer W_IF_ID = 128 + 32;
+    localparam integer W_IF_ID = 128 + 32; // IF/ID transporta el bundle completo y su PC.
 
     // ID/RR transporta los campos ya decodificados de las cuatro
     // unidades, mas el PC y las validez de cada slot.
@@ -193,6 +160,7 @@ module top #(
     logic [2:0]  id_alu_opcode;
     logic        id_alu_imm_op;
     logic [11:0] id_alu_imm;
+    logic        id_alu_illegal_instr;
 
     // Campos extraidos por el decoder del LSU.
     logic [3:0]  id_lsu_base_reg_idx;
@@ -562,7 +530,8 @@ module top #(
         .rs2(id_alu_rs2),
         .opcode(id_alu_opcode),
         .imm_op(id_alu_imm_op),
-        .imm(id_alu_imm)
+        .imm(id_alu_imm),
+        .illegal_o(id_alu_illegal_instr)
     );
 
 

@@ -21,8 +21,8 @@ module alu #(parameter WIDTH = 32) (
   localparam SRLI = 3'b010;
   localparam SLLI = 3'b011;
 
-  logic imm_1;
-  assign imm_1 = imm[11];
+  logic imm_sign_bit;
+  assign imm_sign_bit = imm[11];
 
   always_comb begin
     data_out = '0;
@@ -40,7 +40,7 @@ module alu #(parameter WIDTH = 32) (
       end
       1'b1: begin
         case (opcode)
-          ADDI: data_out = $signed(op1) + $signed({{20{imm_1}}, imm});
+          ADDI: data_out = $signed(op1) + $signed({{20{imm_sign_bit}}, imm});
           SRLI: data_out = op1 >> imm;
           SLLI: data_out = op1 << imm;
           default: data_out = '0;

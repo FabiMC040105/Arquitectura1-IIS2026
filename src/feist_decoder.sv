@@ -32,11 +32,16 @@ module feist_decoder (
     output logic [1:0] round_o,
     output logic mode_o
 );
-
-    // Los últimos 3 bits indican la operación
     logic [2:0] opcode;
 
     assign opcode = instr_feist_i[2:0];
+
+    // Opcodes del slot FEIST
+    localparam logic [2:0] NOP   = 3'b000;
+    localparam logic [2:0] AUTH  = 3'b001; // identificar registros de credenciales
+    localparam logic [2:0] LOGOUT = 3'b010; // eliminar autorización
+    localparam logic [2:0] KSTORE = 3'b011; // identificar qué subllave guardar
+    localparam logic [2:0] FROUND = 3'b100; // extraer los operandos
 
     // Decodificar la instrucción recibida
     always @(*) begin
@@ -67,33 +72,28 @@ module feist_decoder (
 
             case (opcode)
 
-                // NOP: no ejecutar ninguna operación
+                // NOP
                 3'b000: begin
                 end
 
-                // AUTH: identificar registros de credenciales
-                3'b001: begin
+                AUTH: begin
                     auth_en = 1'b1;
                     auth_rs1_o = instr_feist_i[6:3];
                     auth_rs2_o = instr_feist_i[10:7];
                 end
 
-                // LOGOUT: eliminar autorización
-                3'b010: begin
+                LOGOUT: begin
                     logout_en = 1'b1;
                 end
 
-                // KSTORE: identificar qué subllave guardar
-                3'b011: begin
+                KSTORE: begin
                     kstore_en = 1'b1;
-
                     kstore_rs1_o = instr_feist_i[6:3];
                     round_o = instr_feist_i[8:7];
                     key_o = instr_feist_i[10:9];
                 end
 
-                // FROUND: extraer todos los operandos
-                3'b100: begin
+                FROUND: begin
                     fround_en = 1'b1;
 
                     rdL_o = instr_feist_i[23:20];

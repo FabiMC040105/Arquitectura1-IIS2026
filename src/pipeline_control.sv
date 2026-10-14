@@ -32,7 +32,6 @@ module pipeline_control #(
     output logic flush_rr_ex_o,
     output logic flush_ex_wb_o
 );
-
     logic [31:0] pc_next;
     logic pc_enable;
 
@@ -54,17 +53,8 @@ module pipeline_control #(
         flush_ex_wb_o = 1'b0;
 
         // Prioridad 1: Reset
-        if (rst_i) begin
-            pc_enable = 1'b0;
-
-            enable_if_id_o = 1'b0;
-            enable_id_rr_o = 1'b0;
-            enable_rr_ex_o = 1'b0;
-            enable_ex_wb_o = 1'b0;
-        end
-
         // Prioridad 2: Stall estructural
-        else if (stall_i) begin
+        if (rst_i || stall_i) begin
             pc_enable = 1'b0;
 
             enable_if_id_o = 1'b0;
@@ -77,7 +67,7 @@ module pipeline_control #(
         else if (pc_write_wb_i) begin
             pc_next = pc_write_data_wb_i;
 
-            // Invalidar todos los bundles mas jovenes
+            // Invalidar todos los bundles mas recientes
             flush_if_id_o = 1'b1;
             flush_id_rr_o = 1'b1;
             flush_rr_ex_o = 1'b1;
@@ -88,7 +78,7 @@ module pipeline_control #(
         else if (branch_taken_ex_i) begin
             pc_next = branch_target_ex_i;
 
-            // Invalidar los bundles mas jovenes
+            // Invalidar los bundles mas recientes
             flush_if_id_o = 1'b1;
             flush_id_rr_o = 1'b1;
             flush_rr_ex_o = 1'b1;

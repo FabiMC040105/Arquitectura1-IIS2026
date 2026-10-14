@@ -42,8 +42,7 @@ module pipeline_reg #(
             data_o  <= data_i;
         end
 
-        // Si enable_i = 0:
-        // mantiene los datos anteriores.
+        // Si enable_i = 0: mantiene los datos anteriores.
 
     end
 

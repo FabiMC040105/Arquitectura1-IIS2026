@@ -19,34 +19,13 @@ module lsu (
     logic [31:0] offset_extended;
     assign offset_extended = {{20{offset[11]}},offset};
 
-
-    // ============================================================
-    // Cálculo de dirección efectiva
-    // ============================================================
-    //
-    // LOAD  rd, offset(rb)
-    // STORE rs1, offset(rb)
-    //
-    // dirección = rb + offset
-    //
-
     always_comb begin
         effective_addr = base_addr + offset_extended;
     end
 
-
-    // ============================================================
-    // Datos para STORE
-    // ============================================================
-
     always_comb begin
         mem_write_data = store_data;
     end
-
-
-    // ============================================================
-    // Señales hacia la memoria
-    // ============================================================
 
     always_comb begin
         mem_read  = load_enable;

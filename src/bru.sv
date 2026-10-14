@@ -1,4 +1,3 @@
-
 `timescale 1ns/1ps
 
 module bru (
@@ -21,7 +20,7 @@ module bru (
     localparam [2:0] OP_BNE = 3'b101;
 
     // Logica combinacional de saltos
-    always @(*) begin
+    always_comb begin
 
         // Valores por defecto
         branch_taken_o  = 1'b0;
@@ -38,25 +37,19 @@ module bru (
             end
 
             OP_BGE: begin
-                branch_taken_o =
-                    ($signed(src1_value_i) >=
-                     $signed(src2_value_i));
+                branch_taken_o = ($signed(src1_value_i) >= $signed(src2_value_i));
             end
 
             OP_BLE: begin
-                branch_taken_o =
-                    ($signed(src1_value_i) <=
-                     $signed(src2_value_i));
+                branch_taken_o = ($signed(src1_value_i) <= $signed(src2_value_i));
             end
 
             OP_BEQ: begin
-                branch_taken_o =
-                    (src1_value_i == src2_value_i);
+                branch_taken_o = (src1_value_i == src2_value_i);
             end
 
             OP_BNE: begin
-                branch_taken_o =
-                    (src1_value_i != src2_value_i);
+                branch_taken_o = (src1_value_i != src2_value_i);
             end
 
             default: begin
