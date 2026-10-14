@@ -197,7 +197,6 @@ Ejecuta las pruebas principales de Fetch, Dispatch, Top y Feistel.
 | `make feistel` | Prueba la unidad Feistel |
 | `make test` | Ejecuta las pruebas principales |
 | `make clean` | Elimina ejecutables de simulación |
-| `make help` | Muestra la ayuda del Makefile |
 
 La carpeta `tb/` también incluye pruebas adicionales para las unidades funcionales, las memorias, el pipeline, los saltos y la ejecución paralela de instrucciones VLIW.
 
