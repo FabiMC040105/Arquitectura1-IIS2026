@@ -1,360 +1,350 @@
-# Integración con Compiladores (CE1108) — Contrato ISA–generador de código
+# Integración con Compiladores (CE1108) — Contrato ISA–Compilador
 
 **Curso:** CE-4301 Arquitectura de Computadores I  
 **Proyecto:** Proyecto Grupal I — Arquitectura VLIW propia para cifrado por bloques Feistel4  
 **Documento:** `docs/compiler-integration.md`  
-**Estado:** Especificación técnica basada en la implementación compartida. La validación con un programa generado por el compilador de CE1108 queda **pendiente de evidencia**.
+**Estado:** Integración validada con programas generados por el compilador de CE1108.
 
-## 1. Propósito y alcance
+## 1. Propósito
 
-El proyecto se desarrolla en coordinación con un grupo de **Compiladores e Intérpretes (CE1108)**. El objetivo de esta integración es que un programa producido por el compilador de CE1108 pueda convertirse en **bundles VLIW binarios** y ejecutarse directamente sobre el procesador SystemVerilog implementado en CE4301.
+El procesador VLIW desarrollado en CE4301 se integra con el compilador del curso CE1108 para ejecutar programas escritos en el lenguaje de alto nivel definido por el grupo de Compiladores e Intérpretes.
 
-Según la especificación oficial del proyecto, la integración requiere:
+El contrato de integración establece el formato binario de los bundles, la distribución de slots, las codificaciones de instrucciones, las convenciones de registros, la organización de memoria y las reglas de calendarización necesarias para que el código generado por CE1108 pueda ejecutarse directamente sobre la implementación SystemVerilog del procesador.
 
-1. Entregar a CE1108 un contrato estable con las instrucciones, sus codificaciones binarias, la distribución de slots, las convenciones de registros y la sintaxis del ensamblador propio.
-2. Permitir que CE1108 genere **binario directamente** o produzca **ensamblador de la ISA propia** que posteriormente procese el ensamblador de CE4301.
-3. Mantener un **ensamblador autónomo de CE4301**, capaz de ejercitar la totalidad de la ISA sin depender del compilador de CE1108.
-4. Proporcionar un modelo de simulación o un procedimiento reproducible para ejecutar el código emitido.
-5. Demostrar, antes de la defensa, la ejecución correcta de **al menos un programa generado por el compilador de CE1108** en el procesador VLIW propio.
-
-Este archivo documenta el contrato desde el lado del procesador. **No se presupone** que el compilador externo o el ensamblador estén terminados ni que hayan superado pruebas de integración que no aparecen en el material proporcionado.
+La integración fue validada con tres programas completos generados por el compilador de CE1108: cálculo de factorial, búsqueda en una matriz bidimensional y cálculo del máximo común divisor. Los tres programas alcanzaron correctamente su punto final y produjeron los resultados esperados en registros y memoria.
 
 Documentación relacionada:
 
-- [`isa.md`](isa.md): hoja de referencia de instrucciones y codificación binaria detallada.
-- [`microarchitecture.md`](microarchitecture.md): pipeline, interconexiones y control.
-- [`simulation.md`](simulation.md): pruebas, formato de memoria y ejecución con Icarus Verilog.
+- [`isa.md`](isa.md): especificación completa de la ISA y codificación binaria.
+- [`microarchitecture.md`](microarchitecture.md): organización interna y pipeline.
+- [`simulation.md`](simulation.md): simulación, testbenches y herramientas de carga de archivos.
 
-## 2. Responsabilidades de los equipos
+Repositorio del compilador CE1108:
 
-| Equipo | Responsabilidades de integración |
+- https://github.com/FabiMC040105/CompiladoresIIS2026.git
+
+## 2. Responsabilidades de integración
+
+| Equipo | Responsabilidad |
 | --- | --- |
-| **CE4301 — Arquitectura** | Especificar la ISA efectiva; suministrar codificaciones y convenciones; implementar y mantener el procesador SystemVerilog; proporcionar el ensamblador propio y la interfaz de simulación; validar el comportamiento del código generado. |
-| **CE1108 — Compiladores** | Traducir desde el lenguaje de alto nivel; seleccionar las instrucciones disponibles; asignarlas a los slots; calendarizar dependencias y saltos; insertar NOP cuando corresponda; producir binario ejecutable directamente o mediante el ensamblador acordado. |
-| **Ambos equipos** | Fijar y comunicar el contrato de entrada/salida; sincronizar cambios de ISA; escoger programas de prueba; compartir trazas y resultados; registrar evidencia de una ejecución conjunta reproducible. |
+| **CE4301 — Arquitectura** | Mantener la ISA, la codificación binaria, el procesador SystemVerilog, el ensamblador propio y la interfaz de simulación. |
+| **CE1108 — Compiladores** | Traducir el lenguaje de alto nivel, generar ensamblador y código de máquina, resolver etiquetas, calendarizar dependencias e insertar NOP cuando corresponda. |
+| **Integración conjunta** | Verificar que el binario generado respete el contrato de la ISA y produzca resultados correctos al ejecutarse sobre el procesador VLIW. |
 
-La **calendarización estática** pertenece al generador de código. El procesador no determina dinámicamente qué instrucciones son independientes ni reorganiza su ejecución.
+La arquitectura utiliza calendarización estática. El procesador no realiza reordenamiento dinámico, *scoreboarding* ni *forwarding* automático para resolver dependencias de datos; estas dependencias se resuelven en el código generado.
 
-## 3. Contrato de bundle y memoria de instrucciones
+## 3. Formato de bundle
 
-### 3.1. Formato binario
-
-Cada bundle contiene **128 bits (16 bytes)**, divididos en cuatro slots **fijos de 32 bits**:
+Cada instrucción VLIW ocupa **128 bits (16 bytes)** y contiene cuatro slots fijos de 32 bits:
 
 ```text
   127             96 95              64 63              32 31               0
   +-----------------+-------------------+-------------------+-------------------+
   | FEIST (slot 3)  | BRU (slot 2)      | LSU (slot 1)      | ALU (slot 0)      |
   +-----------------+-------------------+-------------------+-------------------+
-        32 bits           32 bits             32 bits             32 bits
 ```
 
-El ensamblador o compilador debe colocar cada operación **únicamente en el slot de su unidad funcional**. Las posiciones no utilizadas se rellenan con `NOP` (`0x00000000` en los 32 bits de ese slot).
+| Slot | Bits | Unidad |
+| --- | --- | --- |
+| 0 | `[31:0]` | ALU |
+| 1 | `[63:32]` | LSU |
+| 2 | `[95:64]` | BRU |
+| 3 | `[127:96]` | FEIST |
 
-| Slot | Bits del bundle | Unidad funcional | Opcode local |
-| --- | --- | --- | --- |
-| 0 | `[31:0]` | ALU | `[3:0]` de su slot (4 bits) |
-| 1 | `[63:32]` | LSU | `[1:0]` de su slot (2 bits) |
-| 2 | `[95:64]` | BRU | `[2:0]` de su slot (3 bits) |
-| 3 | `[127:96]` | FEIST | `[2:0]` de su slot (3 bits) |
+Los slots sin operación se rellenan con `0x00000000`. Los bits reservados de cada instrucción también se codifican con cero.
 
-**Regla obligatoria de codificación:** todos los **bits sobrantes/reservados** que no pertenecen a campos definidos de una instrucción deben codificarse como **cero**. La regla aplica también cuando la unidad no hace una verificación explícita de tales bits; no deben utilizarse para transmitir datos adicionales.
-
-### 3.2. Archivo hexadecimal para `$readmemh`
-
-`instruction_memory.sv` representa cada entrada como un bundle completo de 128 bits y carga el archivo mediante `$readmemh`. Por tanto, la salida hexadecimal prevista es **una línea por bundle**, con **32 dígitos hexadecimales por línea**:
+La memoria de instrucciones utiliza `$readmemh`, por lo que cada línea del archivo de programa contiene un bundle completo representado por **32 dígitos hexadecimales**:
 
 ```text
-FEIST(8 hex) BRU(8 hex) LSU(8 hex) ALU(8 hex)
+FEIST | BRU | LSU | ALU
 ```
 
-Los espacios de la línea anterior son **solo explicativos**; en el archivo `.mem` real se concatenan los 32 dígitos hexadecimales, sin separadores. Ejemplo con `ADD x4, x2, x3` solamente en ALU:
+Ejemplo de un bundle con una operación ALU y los otros tres slots en NOP:
 
 ```text
 00000000000000000000000000003241
 ```
 
-Este ejemplo deja FEIST, BRU y LSU en NOP y coloca `0x00003241` en el slot ALU. El archivo no almacena texto ensamblador: almacena los valores de bundles ya codificados.
+El PC es una dirección en bytes y avanza **16 bytes por bundle** durante la ejecución secuencial. Las direcciones de instrucciones deben estar alineadas a 16 bytes.
 
-**No invertir el orden de los ocho dígitos por slot** al generar líneas para `$readmemh`. La representación hexadecimal de la palabra de 128 bits (`FEIST | BRU | LSU | ALU`) y el orden *little-endian* de los bytes en memoria son conceptos distintos.
+## 4. Ensamblador propio
 
-### 3.3. PC y direcciones
+El proyecto de CE4301 incluye un ensamblador autónomo en `python/assembler.py`. Cada línea del archivo fuente representa un bundle y utiliza la sintaxis:
 
-- El PC corresponde a una **dirección en bytes**, no al índice de un bundle.
-- En ejecución secuencial: `PC_siguiente = PC_actual + 16`.
-- Cada bundle ocupa 16 bytes y debe comenzar en una dirección **alineada a 16** (`PC[3:0] = 0`).
-- La memoria de instrucciones predeterminada es de **64 KiB**, es decir, hasta **4096 bundles**.
-- Las direcciones no alineadas o fuera del rango admitido generan error en `instruction_memory` y el bundle de Fetch se marca inválido.
-- La memoria de datos del modelo también tiene 64 KiB por defecto, direccionados por bytes, con accesos LOAD/STORE de palabras de 32 bits.
+```text
+ALU: <instrucción> | LSU: <instrucción> | BRU: <instrucción> | FEIST: <instrucción>
+```
 
-El programa debe ubicarse en las posiciones correspondientes al PC inicial efectivo (por defecto `RESET_PC = 0`). No se debe suponer un cambio automático de dirección inicial ni de formato de entrada.
+Los slots pueden omitirse; el ensamblador los completa automáticamente con NOP. También impide colocar dos instrucciones en el mismo slot.
 
-## 4. Contrato de instrucciones y operandos
+Ejemplo:
 
-Los campos de cada instrucción son **locales a su slot de 32 bits**. En todos los formatos, los bits no indicados están reservados y valen cero.
+```text
+ALU: ADDI x4, x0, 5 | LSU: LOAD x5, 0(x6) | BRU: NOP | FEIST: NOP
+```
 
-### 4.1. ALU — Slot 0
+Para ensamblar un programa:
 
-| Tipo | Campos locales de bits | Instrucciones y opcode de 4 bits |
-| --- | --- | --- |
-| R | `rs2[15:12]`, `rs1[11:8]`, `rd[7:4]`, `opcode[3:0]` | `ADD 0001`, `SUB 0010`, `OR 0011`, `XOR 0100`, `AND 0101`, `SLT 0110` |
-| I | `imm[23:12]`, `rs1[11:8]`, `rd[7:4]`, `opcode[3:0]` | `ADDI 1001`, `SRLI 1010`, `SLLI 1011` |
-| NOP | Slot en cero | `0000` |
+```bash
+python3 python/assembler.py programa.asm -o program_test.mem
+```
 
-`ADDI` utiliza un inmediato de **12 bits con signo** (`-2048` a `2047`); `SLT` realiza comparación con signo. En los módulos actuales, `SRLI` y `SLLI` usan el valor **completo** de `imm[11:0]` como cantidad de desplazamiento; para desplazamientos útiles de palabras de 32 bits es recomendable emitir valores de `0` a `31`.
+El archivo de salida puede cargarse directamente en la memoria de instrucciones del procesador.
 
-### 4.2. LSU — Slot 1
+## 5. Registros y convenciones utilizadas por CE1108
 
-| Instrucción | Campos locales de bits | Opcode de 2 bits |
-| --- | --- | --- |
-| `LOAD rd, offset(rb)` | `offset[21:10]`, `rb[9:6]`, `rd[5:2]` | `01` |
-| `STORE rs1, offset(rb)` | `offset[21:10]`, `rb[9:6]`, `rs1[5:2]` | `10` |
-| `NOP` | Slot en cero | `00` |
+El procesador dispone de 16 registros identificados como `x0` a `x15`.
 
-`offset` tiene **12 bits con signo**, se extiende a 32 bits y se suma al contenido de `rb`. La memoria transfiere **cuatro bytes por operación**, con orden *little-endian*. La implementación de `data_memory` comprueba que el acceso no sobrepase el límite de memoria; no realiza una comprobación de alineación a 4 bytes. No existen instrucciones propias para cargar o guardar bytes individuales o medias palabras en la ISA compartida.
+| Registro | Uso en la integración |
+| --- | --- |
+| `x0` | Constante cero; las escrituras se descartan. |
+| `x1` | PC especial y mecanismo de redirección al escribirse desde ALU o LOAD. |
+| `x2` | Valor de retorno de funciones. |
+| `x3` | Registro auxiliar del backend. |
+| `x4`–`x12` | Temporales utilizados por el código generado. |
+| `x13` | Registro auxiliar para direcciones y operaciones internas del backend. |
+| `x14` | Stack Pointer (SP). |
+| `x15` | Frame Pointer (FP). |
 
-### 4.3. BRU — Slot 2
+La pila se ubica en la región alta de la memoria de datos y crece hacia direcciones menores. El backend de CE1108 mantiene marcos de activación para funciones, parámetros y variables locales, y restaura `SP` y `FP` al finalizar las llamadas.
 
-| Instrucción | Campos locales de bits | Opcode de 3 bits |
-| --- | --- | --- |
-| `JMP offset` | `offset[22:3]` (20 bits con signo) | `001` |
-| `BGE rs1, rs2, offset` | `offset[22:11]`, `rs2[10:7]`, `rs1[6:3]` | `010` |
-| `BLE rs1, rs2, offset` | Igual que BGE | `011` |
-| `BEQ rs1, rs2, offset` | Igual que BGE | `100` |
-| `BNE rs1, rs2, offset` | Igual que BGE | `101` |
-| `NOP` | Slot en cero | `000` |
+## 6. Memoria de datos
 
-La BRU calcula el destino como **`PC_del_bundle + offset_extendido_con_signo`** cuando el salto se toma. Esto es distinto de calcularlo a partir de `PC + 16`: el desplazamiento es relativo a la dirección del **bundle que contiene el salto**. Los offsets expresan **bytes**, no cantidades de instrucciones. Los saltos condicionales comparan los registros indicados; `BGE` y `BLE` interpretan sus valores como enteros con signo.
+La memoria de datos es direccionable por bytes y utiliza palabras de 32 bits en orden *little-endian*.
 
-Como Fetch exige direcciones de bundle alineadas a 16 bytes, el generador debe producir **destinos alineados**. Por ejemplo, si un `JMP` está en `PC = 0x00000020` y debe saltar al bundle en `0x00000060`, el offset codificado es `0x40` (64 bytes), **no** `4` bundles ni `0x30` desde el siguiente PC.
+Las instrucciones LSU son:
 
-### 4.4. FEIST — Slot 3
+```text
+LOAD  rd, offset(rb)
+STORE rs, offset(rb)
+```
 
-| Instrucción | Campos locales de bits | Opcode de 3 bits |
-| --- | --- | --- |
-| `AUTH rs1, rs2` | `rs1[6:3]`, `rs2[10:7]` | `001` |
-| `LOGOUT` | Sin operandos | `010` |
-| `KSTORE key, round, rs1` | `rs1[6:3]`, `round[8:7]`, `key[10:9]` | `011` |
-| `FROUND rdL, rdR, rsL, rsR, key, round, mode` | `rdL[23:20]`, `rdR[19:16]`, `rsL[15:12]`, `rsR[11:8]`, `key[7:6]`, `round[5:4]`, `mode[3]` | `100` |
-| `NOP` | Slot en cero | `000` |
+El offset se representa con 12 bits con signo. Los accesos de palabra deben estar alineados a **4 bytes** y permanecer dentro del rango válido de la memoria.
 
-Los índices `key` y `round` tienen **2 bits**, con valores `0` a `3`. `mode = 0` significa cifrado y `mode = 1` descifrado. Cada `FROUND` ejecuta **una ronda** sobre un bloque de 64 bits dividido en las mitades de 32 bits `L` y `R`; la llave de 128 bits se administra como cuatro subllaves de 32 bits.
+La configuración utilizada por el compilador divide lógicamente la memoria en:
 
-La bóveda de llaves es **privilegiada y no mapeada a la memoria de datos**. La secuencia válida requiere autorización (`AUTH`), escritura autorizada de las subllaves (`KSTORE`) y uso de la llave **desde la bóveda** (`FROUND`), nunca desde un registro general como fuente de subllave durante el cifrado. `LOGOUT` elimina la autorización. El módulo `key_vault` del material usa credenciales constantes **provisionales para simulación**: estas no constituyen un mecanismo de seguridad para producción.
+```text
+0x0000 - 0x7FFF   datos/globales
+0x8000 - 0xFFFF   pila
+```
 
-La función de ronda que debe verificarse contra la referencia del profesor es:
+## 7. Saltos y control de flujo
+
+Las instrucciones BRU utilizan offsets relativos al **PC del bundle que contiene el salto**.
+
+```text
+target = PC_bundle + offset
+```
+
+Los offsets se expresan en bytes. Como cada bundle ocupa 16 bytes, todos los destinos generados deben respetar la alineación de 16 bytes.
+
+Los saltos se resuelven en EX. Cuando un salto se toma, el control del pipeline redirige el PC y descarta los bundles más jóvenes mediante *flush*. No existe un *branch delay slot* arquitectónico.
+
+El compilador CE1108 resuelve las etiquetas antes de producir el código de máquina y calcula los offsets definitivos a partir de la posición de cada bundle.
+
+## 8. Calendarización de dependencias
+
+El pipeline implementado es:
+
+```text
+IF → ID → RR → EX → WB
+```
+
+Una instrucción productora escribe su resultado en WB y las instrucciones consumidoras leen sus operandos en RR. Para una dependencia RAW, el backend utiliza la regla conservadora de que un valor producido en el bundle `B0` puede consumirse de forma segura a partir de `B3`.
+
+```text
+B0: productor
+B1: operación independiente o NOP
+B2: operación independiente o NOP
+B3: consumidor
+```
+
+Cuando existen operaciones independientes, el compilador puede utilizarlas en los bundles intermedios. De lo contrario, inserta NOP.
+
+La calendarización considera dependencias de:
+
+- registros;
+- memoria;
+- control de flujo;
+- estado de la unidad FEIST y bóveda de llaves;
+- escrituras al PC mediante `x1`.
+
+Las operaciones independientes de unidades distintas pueden compartir un mismo bundle. El empaquetador VLIW de CE1108 conserva una sola operación por slot y evita dependencias RAW, WAW y conflictos de control dentro de un paquete.
+
+## 9. Flujo de integración
+
+El flujo completo utilizado es:
+
+```text
+Programa de alto nivel CE1108
+        ↓
+Lexer + Parser + AST
+        ↓
+Análisis semántico y tabla de símbolos
+        ↓
+Generación de ensamblador de la ISA
+        ↓
+Calendarización de dependencias
+        ↓
+Resolución de etiquetas y offsets
+        ↓
+Empaquetado VLIW de cuatro slots
+        ↓
+Codificación hexadecimal de 128 bits
+        ↓
+$readmemh en instruction_memory.sv
+        ↓
+Ejecución en top.sv
+```
+
+La salida final del compilador contiene una línea hexadecimal de 128 bits por bundle y puede utilizarse directamente como imagen de la memoria de instrucciones.
+
+## 10. Validación conjunta CE1108–CE4301
+
+La integración se validó ejecutando código generado por el compilador CE1108 sobre el procesador VLIW de CE4301. Se utilizaron tres programas con características distintas para comprobar llamadas a funciones, ciclos, saltos, memoria, matrices y operaciones aritméticas.
+
+### 10.1. Factorial
+
+Programa de alto nivel: cálculo de `5!` mediante una función, un ciclo y multiplicación implementada por el backend.
+
+Resultado esperado:
+
+```text
+5! = 120
+```
+
+Resultado de la simulación:
+
+```text
+SELF_LOOP detectado en PC=0x00000F70
+PASS: fin_programa alcanzado en 0x00000F70
+x2 = 0x00000078 (120)
+MEM[0000FFF8] = 00000078 (120)
+x14 = 0x00010000
+x15 = 0x00010000
+```
+
+El valor de retorno fue `120`, el resultado quedó almacenado correctamente en memoria y `SP`/`FP` fueron restaurados al final de la ejecución.
+
+### 10.2. Búsqueda en matriz bidimensional
+
+El programa utiliza una matriz de `2 × 3`:
+
+```text
+[[4, 8, 15],
+ [16, 23, 42]]
+```
+
+y busca el valor `23`.
+
+Resultado esperado:
+
+```text
+posición = 4
+fila = 1
+columna = 1
+```
+
+Resultado de la simulación:
+
+```text
+SELF_LOOP detectado en PC=0x00001950
+PASS: fin_programa alcanzado en 0x00001950
+x2 = 0x00000004 (4)
+MEM[0000FFE4] = 00000017 (23)
+MEM[0000FFE0] = 00000004 (4)
+MEM[0000FFDC] = 00000001 (1)
+MEM[0000FFD8] = 00000001 (1)
+x14 = 0x00010000
+x15 = 0x00010000
+```
+
+La ejecución confirmó el direccionamiento *row-major* de la matriz, el paso de la matriz por referencia y el cálculo correcto de posición, fila y columna.
+
+### 10.3. Máximo común divisor
+
+El tercer programa calcula el máximo común divisor de `48` y `18` mediante múltiples funciones y el algoritmo de Euclides.
+
+Resultado esperado:
+
+```text
+MCD(48, 18) = 6
+```
+
+Resultado de la simulación:
+
+```text
+SELF_LOOP detectado en PC=0x00002000
+PASS: fin_programa alcanzado en 0x00002000
+x2 = 0x00000006 (6)
+MEM[0000FFEC] = 00000006 (6)
+x14 = 0x00010000
+x15 = 0x00010000
+```
+
+Durante la ejecución se observaron los valores intermedios del algoritmo de Euclides hasta alcanzar el resultado `6`. Al finalizar, la pila y el frame pointer regresaron a su estado inicial.
+
+### 10.4. Resumen de resultados
+
+| Programa | Bundles generados | PC final | Resultado esperado | Resultado observado | Estado |
+| --- | ---: | ---: | --- | --- | --- |
+| Factorial | 249 | `0x0F70` | `120` | `120` | PASS |
+| Búsqueda en matriz | 407 | `0x1950` | posición `4`, fila `1`, columna `1` | posición `4`, fila `1`, columna `1` | PASS |
+| MCD | 514 | `0x2000` | `6` | `6` | PASS |
+
+Los tres casos ejecutaron correctamente código generado por CE1108 sobre el procesador VLIW de CE4301. Las pruebas también comprobaron el retorno de funciones, la gestión de pila, las operaciones de memoria y los cambios de flujo generados por el compilador.
+
+## 11. Paralelismo VLIW generado
+
+El empaquetador de CE1108 combina instrucciones independientes de unidades distintas en un mismo bundle. Durante la generación de los programas de prueba se obtuvieron paquetes con combinaciones ALU+LSU, ALU+BRU y LSU+BRU.
+
+Ejemplo de bundle generado para el programa factorial:
+
+```text
+ALU: ADDI x5, x0, 0 | LSU: LOAD x4, 8(x15)
+HEX: 0000000000000000000023D100000059
+```
+
+Otro paquete combina ALU y BRU:
+
+```text
+ALU: ADDI x8, x0, 1 | BRU: BGE x4, x0, 64
+HEX: 00000000000200220000000000001089
+```
+
+Estos casos verifican que la salida del compilador respeta la distribución física de slots y permite expresar paralelismo entre unidades funcionales dentro de un mismo bundle.
+
+## 12. Compatibilidad con la unidad criptográfica
+
+El contrato entregado a CE1108 incluye las instrucciones FEIST:
+
+```text
+AUTH
+LOGOUT
+KSTORE
+FROUND
+```
+
+`FROUND` procesa una ronda Feistel4 sobre dos mitades de 32 bits. Las cuatro subllaves se almacenan en la bóveda mediante `KSTORE` después de una autenticación válida.
+
+La función de ronda implementada es:
 
 ```text
 F(x, k) = ((ROL32(x, 5) + k) mod 2^32) XOR ROL32(x, 13)
-
-Cifrado (mode=0):     L' = R              R' = L XOR F(R, k)
-Descifrado (mode=1):  L' = R XOR F(L, k); R' = L
 ```
 
-La línea de descifrado se expresa de forma precisa como: **`L' = R XOR F(L, k)` y `R' = L`**. Para cifrar se emplean las rondas `0 → 1 → 2 → 3`; para descifrar se emplean en orden `3 → 2 → 1 → 0`.
+Para cifrado se utilizan las rondas `0 → 1 → 2 → 3`; para descifrado se aplican en orden `3 → 2 → 1 → 0`.
 
-## 5. Contrato de registros
+La implementación de CE4301 incluye pruebas de autenticación, almacenamiento de subllaves, acceso autorizado a la bóveda, rondas Feistel, cifrado/descifrado y coexistencia de instrucciones tradicionales y criptográficas.
 
-| Registro | Lectura y escritura | Restricción del generador de código |
-| --- | --- | --- |
-| `x0` | Devuelve siempre cero; se descartan escrituras. | Utilizarlo como fuente cero o destino descartable. |
-| `x1` | Lectura especial: PC del bundle actual. Escrituras válidas provenientes de ALU o LOAD redirigen el PC. | **No usar como temporal general**; los destinos de las redirecciones deben estar alineados a 16 bytes. |
-| `x2`–`x15` | Registros generales de 32 bits. | Mantener las convenciones de uso que acuerden ambos equipos. |
+## 13. Compatibilidad del contrato
 
-`FROUND` tiene **dos registros destino**. En `top.sv` se bloquea su escritura a `x1`; por ello `rdL` y `rdR` deben escogerse fuera de `x1` cuando el resultado deba conservarse. También deben evitarse destinos coincidentes entre instrucciones del mismo bundle: aunque el banco dispone de varios puertos de escritura, el compilador no debe depender de un resultado implícito cuando dos puertos escriben el mismo registro en el mismo flanco.
+La codificación binaria utilizada por CE1108 corresponde a los mismos campos que decodifican los módulos SystemVerilog del procesador. La fuente principal para el contrato ejecutable es la implementación actual de los decodificadores y unidades funcionales, complementada por [`isa.md`](isa.md).
 
-**Convención de llamadas:** el material compartido no define una ABI completa (registros de argumentos, retorno, preservados por llamadas, pila, etc.). No se debe dar por existente. Si CE1108 necesita funciones, llamadas y retorno, ambas partes deberán establecer explícitamente esas convenciones antes de generar programas que las requieran.
+Cualquier cambio futuro en opcodes, campos, distribución de slots o semántica de instrucciones requiere actualizar conjuntamente la especificación de la ISA y el backend del compilador.
 
-## 6. Calendarización estática y dependencias
+## 14. Conclusión
 
-### 6.1. Pipeline que observa el compilador
+La integración entre CE1108 y CE4301 fue validada de extremo a extremo. El compilador genera bundles de 128 bits compatibles con la memoria de instrucciones del procesador, respeta la calendarización estática y las convenciones acordadas, resuelve correctamente etiquetas y saltos y produce programas que se ejecutan sobre la implementación SystemVerilog con los resultados esperados.
 
-`top.sv` implementa cinco etapas:
-
-```text
-IF (fetch) → ID (decode/dispatch) → RR (register read) → EX (execute) → WB (writeback)
-```
-
-Los resultados ALU, LOAD y FROUND pasan por `EX/WB` y se escriben en el banco de registros en **WB**. Las instrucciones posteriores leen operandos en **RR**. No se incluye *forwarding*, *scoreboarding*, reordenamiento automático ni inserción de stalls por dependencias de datos.
-
-Por consiguiente, el generador debe resolver tanto las **dependencias dentro del bundle** como las **dependencias entre bundles consecutivos**.
-
-### 6.2. Reglas de empaquetado
-
-- Un bundle puede contener **como máximo una operación de cada slot fijo**: una ALU, una LSU, una BRU y una FEIST.
-- Las operaciones empaquetadas en el **mismo bundle** deben poder leer sus fuentes sin depender de un resultado que otra operación del propio bundle vaya a escribir después.
-- No agrupar escrituras que compitan por el **mismo registro destino**, ni dos mecanismos simultáneos de redirección del PC que generen resultados ambiguos.
-- Completar con `0x00000000` todos los slots no utilizados.
-- Preservar dependencias de memoria y de estado (por ejemplo, `STORE` seguido de `LOAD`, o `AUTH`/`KSTORE` antes de `FROUND`) además de las dependencias entre registros.
-- No usar `stall_i` como sustituto de la calendarización: es una entrada de control del procesador, no un detector dinámico de dependencias implementado.
-
-### 6.3. Separación de una dependencia RAW
-
-**Regla conservadora para esta implementación de cinco etapas:** si el bundle `B0` produce en un registro general un resultado por ALU/LOAD/FROUND, el primer bundle que lo consume debe empezar **no antes de `B3`** cuando el procesador avanza a razón de un bundle por ciclo y sin *forwarding*. Es decir, deben existir **dos bundles intermedios** (`B1` y `B2`) con operaciones independientes o NOP.
-
-La razón es que `B0` alcanza WB durante el mismo ciclo en que `B2` estaría leyendo sus fuentes en RR; con escrituras en flanco positivo no es seguro asumir que `B2` observa el resultado nuevo. `B3` realiza RR después de ese flanco.
-
-| Bundle | Ciclo 1 | Ciclo 2 | Ciclo 3 | Ciclo 4 | Ciclo 5 | Ciclo 6 | Ciclo 7 | Ciclo 8 |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| `B0`: productor | IF | ID | RR | EX | WB | — | — | — |
-| `B1`: independiente | — | IF | ID | RR | EX | WB | — | — |
-| `B2`: independiente | — | — | IF | ID | RR | EX | WB | — |
-| `B3`: consumidor | — | — | — | IF | ID | RR | EX | WB |
-
-**Interpretación:** el productor alcanza WB en el ciclo 5 y el consumidor seguro alcanza RR en el ciclo 6. Los bundles intermedios pueden llevar instrucciones independientes; solo hacen falta NOP si no hay trabajo útil disponible. Esta regla se deriva del flujo mostrado en `top.sv` y debe verificarse en el programa final de integración; no constituye un subsistema automático de gestión de riesgos.
-
-**Ejemplo conceptual de calendarización** (no representa necesariamente la sintaxis aceptada por el ensamblador aún no aportado):
-
-```text
-B0: ALU = ADDI x4, x0, 7    | LSU = NOP | BRU = NOP | FEIST = NOP
-B1: ALU = NOP               | LSU = NOP | BRU = NOP | FEIST = NOP
-B2: ALU = NOP               | LSU = NOP | BRU = NOP | FEIST = NOP
-B3: ALU = ADD  x5, x4, x4   | LSU = NOP | BRU = NOP | FEIST = NOP
-```
-
-### 6.4. Dependencias de autenticación y llaves
-
-Las instrucciones de bóveda cambian el estado interno en un flanco de reloj de **EX**, mientras FROUND consulta ese estado. A diferencia de un resultado escrito a un registro general en WB, no hay una dependencia RAW de registro entre el estado de la bóveda y FROUND. Sin embargo, el compilador debe preservar **el orden lógico** de `AUTH → KSTORE → FROUND`, garantizar que las subllaves se almacenaron antes del uso y que `LOGOUT` no invalide prematuramente la operación.
-
-Si las credenciales o subllaves provienen de cálculos ALU/LOAD previos, **sí** les aplica la separación entre productor de registro y consumidor FEIST en RR descrita arriba. Se debe verificar la secuencia concreta con el testbench integrado.
-
-## 7. Cambios de flujo y saltos
-
-El salto se evalúa en EX. Si se toma, `pipeline_control.sv` redirige el PC y activa `flush` para descartar bundles más jóvenes que ya estaban en IF/ID/RR. **No se utiliza un branch delay slot arquitectónico**: el mecanismo implementado es el vaciado explícito de las instrucciones posteriores en el pipeline.
-
-Reglas para el generador:
-
-1. Codificar el offset desde el **PC del bundle que contiene la BRU**.
-2. Comprobar que el destino final esté alineado a **16 bytes** y dentro de la memoria de instrucciones disponible.
-3. No depender de efectos de bundles posteriores al salto cuando este se toma, pues pueden ser invalidados.
-4. Tener presente que otros slots **del mismo bundle del salto** pueden ejecutar sus operaciones, ya que comparten la etapa EX; no interpretarlos automáticamente como instrucciones anuladas por el salto.
-5. Considerar que una escritura a `x1` desde ALU o LOAD se resuelve en **WB**, redirige el PC y tiene prioridad de control sobre un salto BRU tomado en EX. Es preferible no mezclar redirecciones que puedan interferirse.
-
-Si el compilador realiza optimizaciones, no debe mover operaciones con efectos sobre memoria, bóveda o control más allá de un salto sin demostrar que la reordenación conserva el comportamiento del programa.
-
-## 8. Interfaz de generación de código
-
-La especificación oficial permite dos rutas:
-
-```mermaid
-flowchart TD
-    HL["Programa de alto nivel (CE1108)"] --> COMP["Compilador CE1108"]
-    COMP --> ASM["Ensamblador de la ISA propia"]
-    COMP --> BIN["Bundles binarios o hexadecimales"]
-    ASM --> ASSEMBLER["Ensamblador autónomo CE4301"]
-    ASSEMBLER --> BIN
-    BIN --> MEM["Archivo de programa .mem<br/>128 bits por línea"]
-    MEM --> IMEM["instruction_memory.sv / $readmemh"]
-    IMEM --> CPU["Procesador top.sv"]
-```
-
-No se establece una gramática textual de empaquetado en este documento porque **el material proporcionado no incluye el código ni la definición formal de la sintaxis del ensamblador propio**. La sintaxis concreta (separadores de slots, labels, directivas, nombres de registros, comentarios, representación de literales, etc.) debe extraerse de ese ensamblador cuando esté disponible y entregarse formalmente a CE1108.
-
-Una vez definida, se debe anexar aquí un ejemplo reproducible de:
-
-- Fuente en ensamblador de CE4301.
-- Archivo `.mem` que produce el ensamblador.
-- Comando exacto para generarlo.
-- Comando o destino de Makefile para simularlo.
-- Resultado esperado y resultado observado.
-
-La **capacidad de codificación de toda la ISA** por parte del ensamblador debe verificarse por separado y **no** se considera demostrada solo por disponer de decodificadores SystemVerilog.
-
-## 9. Plan de validación conjunta y evidencia
-
-El objetivo mínimo de integración de CE1108 es demostrar **al menos un programa realmente generado por su compilador** y ejecutado con resultados correctos sobre el procesador propio. Se recomienda usar dos niveles de validación:
-
-### 9.1. Compatibilidad binaria mínima
-
-Comprobar un programa con ALU, LOAD/STORE y salto que permita verificar:
-
-- Distribución correcta de cada operación en su slot.
-- Posiciones de los campos y opcodes.
-- Bits reservados en cero y NOP canónicos.
-- Incremento del PC de 16 en 16 y cálculo correcto de offsets.
-- Separación de dependencias y escrituras en WB.
-- Transferencia de palabras y orden de bytes en memoria de datos.
-
-### 9.2. Programa conjunto con Feistel4
-
-Preparar un caso que permita observar, de principio a fin:
-
-1. Carga/preparación de los operandos del bloque de 64 bits (`L`, `R`) y del material de llave para `KSTORE`.
-2. Instrucción `AUTH` que habilite el acceso a la bóveda de prueba.
-3. Escritura autorizada de las **cuatro subllaves** de una de las cuatro llaves disponibles.
-4. Cuatro llamadas a `FROUND` de cifrado, con rondas `0, 1, 2, 3`.
-5. Cuatro llamadas a `FROUND` de descifrado, con rondas `3, 2, 1, 0`.
-6. Comparación del valor cifrado con la implementación de referencia Feistel4 del enunciado y del valor descifrado con el bloque original.
-7. Comprobación de que la calendarización evita lecturas prematuras de operandos y de que las llaves no salen a registros generales.
-8. Uso de operaciones generales y criptográficas en los mismos bundles, cuando sean independientes, para demostrar coexistencia de las unidades.
-
-Para la defensa final, la especificación oficial también exige una **herramienta de carga de archivos reales** y una utilidad de extracción. Si se utiliza en la integración, sus comandos, los datos iniciales y el archivo reconstruido deben quedar registrados en [`simulation.md`](simulation.md) o en el README, una vez que dichas herramientas estén disponibles.
-
-### 9.3. Registro sugerido de evidencia
-
-**No completar resultados hasta haber ejecutado realmente las pruebas.** Se propone registrar:
-
-| Evidencia | Qué se debe guardar | Estado constatado con los archivos facilitados |
-| --- | --- | --- |
-| Contrato enviado a CE1108 | Fecha, versión de `isa.md`, destinatarios y confirmación | **Sin constancia aportada** |
-| Ensamblador propio | Código fuente, comandos y cobertura de instrucciones | **No incluido en el material de módulos** |
-| Archivo generado por CE1108 | Fuente de alto nivel, salida ensamblador/binaria y versión de compilador | **No aportado** |
-| Compilación del procesador | Comando ejecutado y salida completa | **Makefile disponible; ejecución no reproducida en esta revisión** |
-| Ejecución conjunta | Log de simulación y, de ser posible, VCD | **Sin evidencia de programa proveniente de CE1108** |
-| Resultado criptográfico | Bloque original, cifrado esperado/obtenido, descifrado recuperado | **Existen testbenches de cifrado; la ejecución conjunta con CE1108 no está demostrada** |
-| Herramienta de archivos | Comandos de carga/extracción y comparación del archivo final | **No identificada en el documento de módulos** |
-
-Los testbenches disponibles (`tb_top`, `tb_feistel`, `tb_crypto_integracion` y otros) son evidencia del **diseño de pruebas del procesador**; por sí solos **no sustituyen** la ejecución de un programa originado en el compilador de CE1108.
-
-### 9.4. Protocolo reproducible para cerrar la validación
-
-Cuando CE1108 entregue un programa, completar este procedimiento en el repositorio:
-
-1. Registrar el commit o la versión del compilador, del ensamblador y del procesador.
-2. Conservar el archivo fuente de alto nivel y su salida intermedia, si existe.
-3. Generar el binario hexadecimal de 128 bits por bundle e inspeccionar al menos un bundle mixto.
-4. Ejecutar la simulación indicando la ruta real de `PROGRAM_FILE` y el comando exacto.
-5. Capturar la salida de consola y el archivo VCD correspondiente.
-6. Comparar los resultados obtenidos con la implementación de referencia del enunciado.
-7. Documentar el resultado de cada paso e identificar las correcciones necesarias si alguno falla.
-
-**Plantilla para completar tras la ejecución:**
-
-```text
-Fecha de la prueba:              PENDIENTE
-Versión/commit de CE1108:        PENDIENTE
-Versión/commit de CE4301:        PENDIENTE
-Programa fuente:                 PENDIENTE
-Archivo de bundles generado:     PENDIENTE
-Comando de generación:           PENDIENTE
-Comando de simulación:           PENDIENTE
-Resultado esperado:              PENDIENTE
-Resultado obtenido:              PENDIENTE
-Evidencia (log/VCD):             PENDIENTE
-Conclusión de la prueba:         PENDIENTE
-```
-
-## 10. Control de cambios y compatibilidad
-
-La especificación oficial indica que el ISA fue el contrato de la primera entrega. Por ello, una modificación posterior en codificación, número/posición de slots, sintaxis o semántica de instrucciones **debe comunicarse formalmente** a CE1108 y acompañarse de una versión actualizada de la hoja de referencia.
-
-La documentación actual utiliza **los decodificadores SystemVerilog y `top.sv` como fuentes principales de comportamiento ejecutable**, y la especificación oficial del proyecto para determinar los requisitos. El Avance 1 se considera antecedente histórico, no una descripción necesariamente definitiva del código. En particular, CE1108 debe utilizar los **campos de FROUND extraídos por `feist_decoder.sv`** y no un diagrama anterior que difiera de ellos.
-
-Para cualquier revisión del contrato se recomienda registrar:
-
-| Campo del cambio | Información |
-| --- | --- |
-| Versión del contrato | Identificador/commit de `docs/isa.md` |
-| Cambio | Instrucción, campo, formato o comportamiento afectado |
-| Motivo | Corrección o necesidad de implementación |
-| Impacto | Modificaciones al compilador, ensamblador y pruebas |
-| Comunicación | Fecha y confirmación de recepción por CE1108 |
-| Verificación | Prueba binaria y simulación posteriores al cambio |
-
-## 11. Estado final de este documento
-
-**Definido a partir del código compartido:** formato del bundle, slots, codificaciones de los decodificadores, registros, accesos de 32 bits, saltos relativos al PC, pipeline de cinco etapas, regla de calendarización sin resolución dinámica, restricciones de FEIST y formato de carga hexadecimal.
-
-**Exigido por la especificación oficial, aún sin evidencia aportada en estos archivos:** ensamblador autónomo que cubra el ISA completo, acuerdo formal de sintaxis con CE1108, recepción del programa compilado, ejecución conjunta sobre `top.sv` y validación final sobre archivos reales.
-
-Este documento deberá actualizarse cuando se incorpore el ensamblador o se realice la prueba con CE1108. **No se declara que la integración conjunta esté completa hasta contar con ese resultado reproducible.**
+Las pruebas de factorial, búsqueda en matriz y máximo común divisor confirman que la arquitectura puede ejecutar programas generados automáticamente con funciones, pila, memoria, estructuras de control y operaciones aritméticas, completando el contrato de integración ISA–compilador definido para el proyecto.
