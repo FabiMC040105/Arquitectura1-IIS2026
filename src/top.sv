@@ -1,5 +1,14 @@
 `timescale 1ns/1ps
 
+// Programa y datos por defecto. Se sobreescriben al compilar con
+//   iverilog -DPROGRAM_FILE=\"salida_compilador.mem\" -DDATA_FILE=\"datos.mem\"
+`ifndef PROGRAM_FILE
+  `define PROGRAM_FILE "program_test.mem"
+`endif
+`ifndef DATA_FILE
+  `define DATA_FILE "input.mem"
+`endif
+
 // Modulo principal del procesador VLIW.
 // Integra el pipeline completo de cinco etapas:
 //
@@ -12,10 +21,10 @@
 // El PC vive unicamente en pipeline_control, que tambien genera
 // los enable y flush de los registros que separan cada etapa.
 module top #(
-    parameter integer IMEM_WORDS = 16384,
+    parameter integer IMEM_WORDS = 996,
     parameter logic [31:0] RESET_PC = 32'h00000000,
-    parameter PROGRAM_FILE = "program_test.mem",
-    parameter DATA_FILE = "input.mem"
+    parameter PROGRAM_FILE = `PROGRAM_FILE,
+    parameter DATA_FILE = `DATA_FILE
 ) (
     input logic clk_i,          // Reloj del procesador
     input logic rst_i,          // Reinicio del procesador

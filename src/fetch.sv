@@ -1,8 +1,12 @@
 `timescale 1ns/1ps
 
+`ifndef PROGRAM_FILE
+  `define PROGRAM_FILE "program_test.mem"
+`endif
+
 module fetch #(
     parameter integer IMEM_WORDS = 16384, // 16384 palabras * 4 bytes = 65536 bytes = 64 KiB.
-    parameter PROGRAM_FILE = "program_test.mem"
+    parameter PROGRAM_FILE = `PROGRAM_FILE
 ) (
     input logic [31:0] pc_i,
     output logic [127:0] bundle_o,

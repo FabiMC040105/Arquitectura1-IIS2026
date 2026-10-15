@@ -1,8 +1,14 @@
 `timescale 1ns/1ps
 
+// El programa por defecto se puede cambiar al compilar sin tocar el RTL:
+//   iverilog -DPROGRAM_FILE=\"mi_programa.mem\" ...
+`ifndef PROGRAM_FILE
+  `define PROGRAM_FILE "program_test.mem"
+`endif
+
 module instruction_memory #(
     parameter int MEM_BYTES = 65536, //64KiB
-    parameter PROGRAM_FILE = "program_test.mem"
+    parameter PROGRAM_FILE = `PROGRAM_FILE
 )(
     input  logic [31:0]  addr,
 

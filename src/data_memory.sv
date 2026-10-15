@@ -1,8 +1,12 @@
 `timescale 1ns/1ps
 
+`ifndef DATA_FILE
+  `define DATA_FILE "input.mem"
+`endif
+
 module data_memory #(
     parameter int MEM_BYTES = 65536, // 65536 bytes = 64 KB por defecto.
-    parameter DATA_FILE = "input.mem" //Para cargar archivos
+    parameter DATA_FILE = `DATA_FILE //Para cargar archivos
 )(
     input  logic        clk,
     input  logic        rst,
