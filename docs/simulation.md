@@ -2,7 +2,9 @@
 
 **Curso:** CE-4301 Arquitectura de Computadores I  
 **Proyecto:** Proyecto Grupal I — Arquitectura VLIW propia para aplicaciones de cifrado por bloques  
-
+**Documento:** `docs/simulation.md`  
+**Fuentes:** especificación oficial del proyecto y módulos, Makefile y testbenches del material de implementación compartido.  
+**Alcance:** este documento describe el modelo y las pruebas presentes en el material revisado. La existencia de un testbench **no equivale a una ejecución verificada**; los resultados y archivos de evidencia deben obtenerse ejecutando la versión final del repositorio.
 
 ## 1. Objetivo y enfoque de validación
 
@@ -172,7 +174,7 @@ make test
 
 El primer comando comprueba elaboración de módulos; el segundo comprueba la instancia principal, y el tercero ejecuta las cuatro pruebas conectadas al objetivo general. **`make check` no está incluido automáticamente en `make test`.**
 
-
+El material consolidado compartido incluye el cuerpo de numerosos testbenches, pero **no permite confirmar la presencia del archivo `tb/tb_fetch.sv`**, aunque el Makefile sí lo referencia. Asimismo, contiene **dos versiones de `tb_top`**; para reproducir la ejecución se debe utilizar el único `tb/tb_top.sv` que esté efectivamente versionado en el repositorio final. Esto es una observación sobre el material recibido, no una afirmación de que el repositorio de trabajo carezca necesariamente de esos archivos.
 
 ### 4.1. Ejemplo de ejecución de una prueba independiente desde CMD
 
@@ -186,6 +188,8 @@ vvp sim_data_memory.vvp
 Para las pruebas que involucran varios módulos es necesario pasar al compilador **todos los archivos SystemVerilog dependientes**. Los nombres y rutas deben corresponder a la estructura real del repositorio.
 
 ## 5. Inventario de testbenches incluidos en el material
+
+La siguiente tabla distingue las pruebas **encontradas en el documento de módulos** de aquellas realmente conectadas al Makefile. Las pruebas de la tabla son casos programados; no se atribuye aquí un resultado `PASS` de ejecución real.
 
 | Testbench (módulo principal) | Aspectos comprobados por el código de prueba | `make test` |
 | --- | --- | --- |
@@ -207,16 +211,22 @@ Para las pruebas que involucran varios módulos es necesario pasar al compilador
 | `tb_pipeline_control` | `PC + 16`, stall, saltos, prioridad de redirecciones, flush y reset. | No |
 | `tb_pipeline_reg` | Reset, flush, enable, conservación de datos y propagación de validez. | No |
 
+**Nota sobre `tb_fetch`:** aparece en el Makefile y es requerido por el objetivo `make fetch`, pero su cuerpo no se identifica en el material de módulos proporcionado. Debe comprobarse directamente en `tb/` antes de registrar qué casos cubre y cuál fue su resultado.
 
 ### 5.1. Validación del cifrado de cuatro rondas
+
+Es importante **no confundir dos niveles de prueba**:
 
 - `tb_feistel` ejerce la ruta **integrada en el procesador `top`** para una instrucción FROUND, además de autenticación, almacenamiento de llave, cierre de sesión y rechazo de accesos ilegales.
 - `tb_crypto_integracion` comprueba un **bloque completo de 64 bits a través de cuatro rondas de cifrado y cuatro rondas inversas de descifrado**, conectando directamente `key_vault` y `crypto_unit`. La prueba utiliza el bloque formado por `HOLA` + `1234` y verifica la recuperación de los valores originales.
 
 El segundo testbench valida el cálculo criptográfico completo a nivel de subsistema, pero **no equivale por sí mismo** a demostrar que un programa de cifrado de archivos se ejecuta íntegramente en `top`, lee datos desde la memoria del procesador y guarda el resultado nuevamente en memoria.
 
+### 5.2. Detección de fallos y códigos de salida
 
+Algunos testbenches usan `$fatal(1, ...)` cuando falla una comprobación. Esta forma permite señalar un error a la herramienta de simulación y automatizar un fallo del objetivo correspondiente.
 
+Otros testbenches del material —por ejemplo, `data_memory_tb`, `lsu_tb`, `lsu_decoder_tb` y `lsu_integration_tb`— muestran resultados con mensajes `TEST PASS` / `TEST FAIL` y finalizan con `$finish`, sin convertir necesariamente los fallos en un código de salida distinto de cero. En esas pruebas, **un proceso que termina normalmente no demuestra por sí mismo que todas las comprobaciones pasaron**. Debe revisarse su salida o mejorar el testbench para llamar a `$fatal` al detectar una diferencia.
 
 ## 6. Archivos VCD e inspección con GTKWave
 
@@ -235,11 +245,19 @@ gtkwave tb_key_vault.vcd
 
 Los nombres de trazas identificados en el material incluyen `data_memory.vcd`, `lsu.vcd`, `lsu_decoder.vcd`, `lsu_integration.vcd`, `instruction_memory.vcd`, `tb_bru.vcd`, `tb_bru_decoder.vcd`, `bru_conexion.vcd`, `tb_key_vault.vcd`, `tb_crypto_unit.vcd`, `tb_crypto_integracion.vcd`, `tb_feist_decoder.vcd`, `pipeline_reg.vcd` y `pipeline_control.vcd`.
 
+**No se identifica una llamada a `$dumpfile` en las versiones proporcionadas de `tb_dispatch`, `tb_top` y `tb_feistel`**. Por ello, no debe afirmarse que esas tres pruebas producen una traza VCD hasta verificar el código final o añadir explícitamente el volcado. Para cumplir plenamente el requisito del enunciado sobre visualización de las simulaciones, conviene habilitar trazas también en las pruebas de integración finales.
 
+Se recomienda observar, según corresponda:
+
+- `pc_o`, `bundle_o`, validez de cada slot y controles `enable`/`flush` de pipeline.
+- Señales de lectura/escritura y dirección efectiva de LSU y memoria.
+- `branch_taken` y `branch_target` de BRU.
+- `authorized`, `access_error`, `subkey_valid`, `result_valid` y entradas/salidas de FROUND.
+- Registros de destino y sus valores al llegar a WB.
 
 ## 7. Registro reproducible de resultados
 
-Plantilla: 
+Para la entrega final, la evidencia debe corresponder **al mismo commit** que se presentará en la defensa. La siguiente tabla es una plantilla para completar después de ejecutar la versión final en el equipo del grupo; se deja deliberadamente sin resultados supuestos.
 
 | Comando o prueba | Resultado real | Evidencia |
 | --- | --- | --- |
@@ -252,6 +270,48 @@ Plantilla:
 | Cifrado/descifrado desde un archivo real | Pendiente de demostrar | Archivo original, cifrado, recuperado y comparación |
 | Programa producido por el compilador CE1108 | Pendiente de demostrar | Binario/bundles, ejecución y resultado |
 
+Para archivar evidencia, se recomienda conservar el comando ejecutado, la versión del código, la salida completa del testbench y —cuando se generen— las trazas VCD. Al interpretar los resultados, también se debe comprobar que el testbench no haya emitido mensajes `FAIL` ignorados.
 
+## 8. Carga y extracción de archivos de datos reales
 
+La especificación oficial exige una herramienta capaz de:
 
+1. Leer archivos genéricos como texto, imágenes o binarios.
+2. Convertir sus bytes a un archivo de inicialización de memoria (por ejemplo, `.mem`).
+3. Seleccionar la dirección inicial de carga y reportar el tamaño/rango ocupado.
+4. Extraer los bytes cifrados o descifrados de un volcado de memoria y reconstruir un archivo de salida.
+5. Comparar el archivo original con el recuperado tras cifrar y descifrar.
+
+**En el material de implementación revisado no se identifica aún el código de una herramienta de carga/extracción ni del ensamblador propio.** Por tanto, no se presenta ninguna interfaz de comandos como si ya estuviera disponible. La memoria de datos mostrada en `data_memory.sv` se inicializa en cero; su implementación proporcionada no incluye por sí misma una carga de archivos mediante `$readmemh`. La integración de la utilidad de archivos con el modelo de memoria deberá documentarse con los programas y comandos **reales** cuando esos componentes estén disponibles en el repositorio.
+
+Una validación completa sobre un archivo real debería demostrar, al menos:
+
+```text
+Archivo original
+   ↓ herramienta de carga
+Bytes disponibles en memoria de datos
+   ↓ ejecución de cuatro rondas Feistel4 por bloque
+Datos cifrados
+   ↓ ejecución de descifrado con subllaves inversas
+Datos recuperados
+   ↓ herramienta de extracción
+Archivo reconstruido y comparación con el original
+```
+
+El tratamiento de archivos cuyo tamaño no sea múltiplo de **8 bytes** debe definirse y registrarse para poder recuperar exactamente la longitud original. Esta es una **consideración pendiente de la herramienta de archivos**, no una función de padding que se haya identificado en los módulos actuales. Asimismo, el padding de archivos no debe confundirse con la regla del ISA que exige codificar los **bits reservados de las instrucciones en cero**.
+
+## 9. Alcance de las pruebas y verificaciones pendientes
+
+De acuerdo con el enunciado oficial, la validación final debe demostrar operaciones tradicionales y criptográficas coexistiendo en los mismos bundles, ejecución de las cuatro rondas Feistel4, protección de las llaves, funcionamiento sobre archivos reales y ejecución de al menos un programa producido por el compilador de CE1108.
+
+El material revisado **sí describe** módulos de ALU, LSU, BRU, FEIST, bóveda, pipeline e integración; también incluye testbenches para una parte considerable de esos comportamientos. Sin embargo, para dar por cumplidos todos los requisitos aún se necesita confirmar con el repositorio y las ejecuciones finales:
+
+- La disponibilidad y ejecución efectiva de todos los testbenches referenciados por el Makefile, especialmente `tb_fetch.sv`, y cuál es la versión vigente de `tb_top.sv`.
+- La ausencia de errores de compilación y simulación después de integrar todos los módulos.
+- Evidencia de bundles mixtos que combinen **en paralelo** operaciones ALU, memoria, control de flujo y criptografía según la calendarización elegida.
+- Evidencia de cifrado y descifrado completo mediante un **programa VLIW ejecutado en `top`**, además de la prueba aislada de cuatro rondas del subsistema criptográfico.
+- La herramienta de carga y extracción de archivos, el ensamblador propio y sus ejemplos reproducibles.
+- La ejecución conjunta con el compilador de CE1108, cuya interfaz debe explicarse en [`compiler-integration.md`](compiler-integration.md).
+- La producción de trazas de las pruebas finales y un registro concreto de resultados comprobables.
+
+**Criterio de cierre:** actualizar las secciones de resultados únicamente con salidas obtenidas del código final y conservar evidencia suficiente para reproducirlas durante la defensa.

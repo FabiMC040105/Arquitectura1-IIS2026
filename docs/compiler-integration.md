@@ -3,7 +3,7 @@
 **Curso:** CE-4301 Arquitectura de Computadores I  
 **Proyecto:** Proyecto Grupal I — Arquitectura VLIW propia para cifrado por bloques Feistel4  
 **Documento:** `docs/compiler-integration.md`  
-.
+**Estado:** Especificación técnica basada en la implementación compartida. La validación con un programa generado por el compilador de CE1108 queda **pendiente de evidencia**.
 
 ## 1. Propósito y alcance
 
@@ -17,6 +17,7 @@ Según la especificación oficial del proyecto, la integración requiere:
 4. Proporcionar un modelo de simulación o un procedimiento reproducible para ejecutar el código emitido.
 5. Demostrar, antes de la defensa, la ejecución correcta de **al menos un programa generado por el compilador de CE1108** en el procesador VLIW propio.
 
+Este archivo documenta el contrato desde el lado del procesador. **No se presupone** que el compilador externo o el ensamblador estén terminados ni que hayan superado pruebas de integración que no aparecen en el material proporcionado.
 
 Documentación relacionada:
 
@@ -162,7 +163,7 @@ La línea de descifrado se expresa de forma precisa como: **`L' = R XOR F(L, k)`
 
 `FROUND` tiene **dos registros destino**. En `top.sv` se bloquea su escritura a `x1`; por ello `rdL` y `rdR` deben escogerse fuera de `x1` cuando el resultado deba conservarse. También deben evitarse destinos coincidentes entre instrucciones del mismo bundle: aunque el banco dispone de varios puertos de escritura, el compilador no debe depender de un resultado implícito cuando dos puertos escriben el mismo registro en el mismo flanco.
 
-
+**Convención de llamadas:** el material compartido no define una ABI completa (registros de argumentos, retorno, preservados por llamadas, pila, etc.). No se debe dar por existente. Si CE1108 necesita funciones, llamadas y retorno, ambas partes deberán establecer explícitamente esas convenciones antes de generar programas que las requieran.
 
 ## 6. Calendarización estática y dependencias
 
@@ -247,9 +248,9 @@ flowchart TD
     IMEM --> CPU["Procesador top.sv"]
 ```
 
+No se establece una gramática textual de empaquetado en este documento porque **el material proporcionado no incluye el código ni la definición formal de la sintaxis del ensamblador propio**. La sintaxis concreta (separadores de slots, labels, directivas, nombres de registros, comentarios, representación de literales, etc.) debe extraerse de ese ensamblador cuando esté disponible y entregarse formalmente a CE1108.
 
-
-anexar aquí un ejemplo reproducible de:
+Una vez definida, se debe anexar aquí un ejemplo reproducible de:
 
 - Fuente en ensamblador de CE4301.
 - Archivo `.mem` que produce el ensamblador.
@@ -261,7 +262,7 @@ La **capacidad de codificación de toda la ISA** por parte del ensamblador debe 
 
 ## 9. Plan de validación conjunta y evidencia
 
-El objetivo mínimo de integración de CE1108 es demostrar **al menos un programa realmente generado por su compilador** y ejecutado con resultados correctos sobre el procesador propio. Se dan dos niveles de validación:
+El objetivo mínimo de integración de CE1108 es demostrar **al menos un programa realmente generado por su compilador** y ejecutado con resultados correctos sobre el procesador propio. Se recomienda usar dos niveles de validación:
 
 ### 9.1. Compatibilidad binaria mínima
 
@@ -287,11 +288,11 @@ Preparar un caso que permita observar, de principio a fin:
 7. Comprobación de que la calendarización evita lecturas prematuras de operandos y de que las llaves no salen a registros generales.
 8. Uso de operaciones generales y criptográficas en los mismos bundles, cuando sean independientes, para demostrar coexistencia de las unidades.
 
-
+Para la defensa final, la especificación oficial también exige una **herramienta de carga de archivos reales** y una utilidad de extracción. Si se utiliza en la integración, sus comandos, los datos iniciales y el archivo reconstruido deben quedar registrados en [`simulation.md`](simulation.md) o en el README, una vez que dichas herramientas estén disponibles.
 
 ### 9.3. Registro sugerido de evidencia
 
-registrar:
+**No completar resultados hasta haber ejecutado realmente las pruebas.** Se propone registrar:
 
 | Evidencia | Qué se debe guardar | Estado constatado con los archivos facilitados |
 | --- | --- | --- |
@@ -303,6 +304,7 @@ registrar:
 | Resultado criptográfico | Bloque original, cifrado esperado/obtenido, descifrado recuperado | **Existen testbenches de cifrado; la ejecución conjunta con CE1108 no está demostrada** |
 | Herramienta de archivos | Comandos de carga/extracción y comparación del archivo final | **No identificada en el documento de módulos** |
 
+Los testbenches disponibles (`tb_top`, `tb_feistel`, `tb_crypto_integracion` y otros) son evidencia del **diseño de pruebas del procesador**; por sí solos **no sustituyen** la ejecución de un programa originado en el compilador de CE1108.
 
 ### 9.4. Protocolo reproducible para cerrar la validación
 
@@ -332,3 +334,27 @@ Evidencia (log/VCD):             PENDIENTE
 Conclusión de la prueba:         PENDIENTE
 ```
 
+## 10. Control de cambios y compatibilidad
+
+La especificación oficial indica que el ISA fue el contrato de la primera entrega. Por ello, una modificación posterior en codificación, número/posición de slots, sintaxis o semántica de instrucciones **debe comunicarse formalmente** a CE1108 y acompañarse de una versión actualizada de la hoja de referencia.
+
+La documentación actual utiliza **los decodificadores SystemVerilog y `top.sv` como fuentes principales de comportamiento ejecutable**, y la especificación oficial del proyecto para determinar los requisitos. El Avance 1 se considera antecedente histórico, no una descripción necesariamente definitiva del código. En particular, CE1108 debe utilizar los **campos de FROUND extraídos por `feist_decoder.sv`** y no un diagrama anterior que difiera de ellos.
+
+Para cualquier revisión del contrato se recomienda registrar:
+
+| Campo del cambio | Información |
+| --- | --- |
+| Versión del contrato | Identificador/commit de `docs/isa.md` |
+| Cambio | Instrucción, campo, formato o comportamiento afectado |
+| Motivo | Corrección o necesidad de implementación |
+| Impacto | Modificaciones al compilador, ensamblador y pruebas |
+| Comunicación | Fecha y confirmación de recepción por CE1108 |
+| Verificación | Prueba binaria y simulación posteriores al cambio |
+
+## 11. Estado final de este documento
+
+**Definido a partir del código compartido:** formato del bundle, slots, codificaciones de los decodificadores, registros, accesos de 32 bits, saltos relativos al PC, pipeline de cinco etapas, regla de calendarización sin resolución dinámica, restricciones de FEIST y formato de carga hexadecimal.
+
+**Exigido por la especificación oficial, aún sin evidencia aportada en estos archivos:** ensamblador autónomo que cubra el ISA completo, acuerdo formal de sintaxis con CE1108, recepción del programa compilado, ejecución conjunta sobre `top.sv` y validación final sobre archivos reales.
+
+Este documento deberá actualizarse cuando se incorpore el ensamblador o se realice la prueba con CE1108. **No se declara que la integración conjunta esté completa hasta contar con ese resultado reproducible.**
