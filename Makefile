@@ -14,7 +14,6 @@ SRC = src/top.sv \
       src/data_memory.sv \
       src/bru.sv \
       src/bru_decoder.sv \
-      src/bru_conexion.sv \
       src/crypto_unit.sv \
       src/feist_decoder.sv \
       src/key_vault.sv \
@@ -33,7 +32,7 @@ check-modules:
 	for module in top fetch instruction_memory dispatch \
 	              register_file alu alu_decoder \
 	              lsu lsu_decoder data_memory \
-	              bru bru_decoder bru_conexion \
+	              bru bru_decoder \
 	              crypto_unit feist_decoder key_vault \
 	              pipeline_reg pipeline_control; do \
 	    echo ""; \
@@ -58,6 +57,18 @@ dispatch:
 # Comprueba que top y sus dependencias compilen.
 top:
 	$(IVERILOG) $(FLAGS) -s top -tnull $(SRC)
+
+# Ejecuta el procesador con un programa arbitrario del compilador.
+#   make run PROGRAM=salida_compilador.mem DATA=mis_datos.mem
+PROGRAM ?= program_test.mem
+DATA    ?= input.mem
+
+run:
+	@mkdir -p build
+	$(IVERILOG) $(FLAGS) -s tb_run -o sim_run \
+	    -DPROGRAM_FILE=\"$(PROGRAM)\" -DDATA_FILE=\"$(DATA)\" \
+	    tb/tb_run.sv $(SRC)
+	$(VVP) sim_run
 
 # Ejecuta el testbench de integración.
 tb_top:
