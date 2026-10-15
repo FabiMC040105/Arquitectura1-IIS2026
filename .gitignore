@@ -1,0 +1,11 @@
+# Archivos generados por Icarus Verilog
+*.vvp
+
+# Ondas de GTKWave
+*.vcd
+
+# Archivos temporales de Python
+__pycache__/
+*.pyc
+.venv/
+.DS_Store
