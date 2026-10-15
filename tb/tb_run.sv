@@ -1,27 +1,13 @@
 `timescale 1ns/1ps
 
-// Harness de ejecucion para programas arbitrarios del compilador.
-//
-// A diferencia de los testbenches de verificacion, este modulo no
-// comprueba valores esperados: solo ejecuta el programa y vuelca el
-// estado final. Sirve para correr binarios de la contraparte CE1108.
-//
-//   make run PROGRAM=salida_compilador.mem
-//   make run PROGRAM=salida_compilador.mem DATA=mis_datos.mem
-//
-// El programa y los datos llegan por las macros PROGRAM_FILE y
-// DATA_FILE que define el Makefile con -D. Si no se pasan, se usan
-// program_test.mem e input.mem.
-
-// Numero maximo de ciclos antes de abortar, por si el programa
-// no termina. Se puede subir con -DMAX_CICLOS=...
+// Numero maximo de ciclos antes de abortar, por si el programa no termina. Se puede subir con -DMAX_CICLOS=...
 `ifndef MAX_CICLOS
   `define MAX_CICLOS 100000
 `endif
 
 // Cuantas palabras de memoria de datos se vuelcan al terminar.
 `ifndef DUMP_PALABRAS
-  `define DUMP_PALABRAS 32
+  `define DUMP_PALABRAS 640
 `endif
 
 module tb_run;
@@ -48,8 +34,6 @@ module tb_run;
     logic valid_feist_o;
     logic dispatch_valid_o;
 
-    // top toma PROGRAM_FILE y DATA_FILE de las macros, asi que no
-    // hace falta sobreescribir parametros aqui.
     top dut (
         .clk_i(clk_i),
         .rst_i(rst_i),
@@ -72,7 +56,6 @@ module tb_run;
         .dispatch_valid_o(dispatch_valid_o)
     );
 
-    // Reloj de 10 ns de periodo.
     initial begin
         clk_i = 1'b0;
         forever #5 clk_i = ~clk_i;
@@ -84,7 +67,7 @@ module tb_run;
     logic [31:0] palabra;
     logic [15:0] direccion;
 
-    // Vuelca los 16 registros arquitectonicos.
+    // Vuelca los 16 registros
     task automatic volcar_registros;
         begin
             $display("");
@@ -96,13 +79,11 @@ module tb_run;
         end
     endtask
 
-    // Vuelca las primeras palabras de la memoria de datos.
-    // La memoria es direccionable por bytes y little-endian.
+    // Vuelca las primeras palabras de la memoria de datos. La memoria es direccionable por bytes y little-endian.
     task automatic volcar_memoria;
         begin
             $display("");
-            $display("--- Memoria de datos (primeras %0d palabras) ---",
-                     `DUMP_PALABRAS);
+            $display("--- Memoria de datos (primeras %0d palabras) ---", `DUMP_PALABRAS);
             for (i = 0; i < `DUMP_PALABRAS; i = i + 1) begin
                 palabra = {dut.data_memory_inst.memory[i*4 + 3],
                            dut.data_memory_inst.memory[i*4 + 2],
