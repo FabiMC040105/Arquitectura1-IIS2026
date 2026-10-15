@@ -67,44 +67,69 @@ module feist_decoder (
         round_o = 2'b0;
         mode_o = 1'b0;
 
-        // Solo procesar instrucciones válidas
+        // Solo procesar instrucciones válidas.
+        // Cada formato ocupa un ancho distinto, asi que los bits altos
+        // que deben venir en cero se comprueban dentro de cada caso:
+        //   AUTH y KSTORE usan hasta el bit 10, LOGOUT solo el opcode,
+        //   y FROUND llega hasta el bit 23.
         if (valid_feist_i) begin
-
             case (opcode)
 
-                // NOP
+                // NOP: la instrucción completa debe ser cero.
                 3'b000: begin
+                    if (instr_feist_i[31:3] != 29'd0)
+                        illegal_opcode = 1'b1;
                 end
 
                 AUTH: begin
-                    auth_en = 1'b1;
-                    auth_rs1_o = instr_feist_i[6:3];
-                    auth_rs2_o = instr_feist_i[10:7];
+                    if (instr_feist_i[31:11] != 21'd0) begin
+                        illegal_opcode = 1'b1;
+                    end
+                    else begin
+                        auth_en = 1'b1;
+                        auth_rs1_o = instr_feist_i[6:3];
+                        auth_rs2_o = instr_feist_i[10:7];
+                    end
                 end
 
                 LOGOUT: begin
-                    logout_en = 1'b1;
+                    if (instr_feist_i[31:3] != 29'd0)
+                        illegal_opcode = 1'b1;
+                    else
+                        logout_en = 1'b1;
                 end
 
                 KSTORE: begin
-                    kstore_en = 1'b1;
-                    kstore_rs1_o = instr_feist_i[6:3];
-                    round_o = instr_feist_i[8:7];
-                    key_o = instr_feist_i[10:9];
+                    if (instr_feist_i[31:11] != 21'd0) begin
+                        illegal_opcode = 1'b1;
+                    end
+                    else begin
+                        kstore_en = 1'b1;
+                        kstore_rs1_o = instr_feist_i[6:3];
+                        round_o = instr_feist_i[8:7];
+                        key_o = instr_feist_i[10:9];
+                    end
                 end
 
                 FROUND: begin
-                    fround_en = 1'b1;
+                    // FROUND usa los campos hasta el bit 23, asi que
+                    // solo los bits [31:24] deben venir en cero.
+                    if (instr_feist_i[31:24] != 8'd0) begin
+                        illegal_opcode = 1'b1;
+                    end
+                    else begin
+                        fround_en = 1'b1;
 
-                    rdL_o = instr_feist_i[23:20];
-                    rdR_o = instr_feist_i[19:16];
+                        rdL_o = instr_feist_i[23:20];
+                        rdR_o = instr_feist_i[19:16];
 
-                    rsL_o = instr_feist_i[15:12];
-                    rsR_o = instr_feist_i[11:8];
+                        rsL_o = instr_feist_i[15:12];
+                        rsR_o = instr_feist_i[11:8];
 
-                    key_o = instr_feist_i[7:6];
-                    round_o = instr_feist_i[5:4];
-                    mode_o = instr_feist_i[3];
+                        key_o = instr_feist_i[7:6];
+                        round_o = instr_feist_i[5:4];
+                        mode_o = instr_feist_i[3];
+                    end
                 end
 
                 // Instrucción desconocida

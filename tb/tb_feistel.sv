@@ -91,8 +91,7 @@ module tb_feistel;
         feist_kstore = {21'b0, key, round, rs1, 3'b011};
     endfunction
 
-    // FROUND: rdL[23:20], rdR[19:16], rsL[15:12], rsR[11:8],
-    //         key[7:6], round[5:4], mode[3], opcode[2:0]
+    // FROUND: rdL[23:20], rdR[19:16], rsL[15:12], rsR[11:8], key[7:6], round[5:4], mode[3], opcode[2:0]
     function automatic [31:0] feist_round(
         input [3:0] rdL,
         input [3:0] rdR,

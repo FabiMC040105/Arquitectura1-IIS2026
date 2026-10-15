@@ -4,7 +4,7 @@ module tb_fetch;
 
     // Memoria pequena para que el limite superior sea facil de alcanzar.
     // 64 palabras * 4 bytes = 256 bytes = 16 bundles.
-    localparam integer IMEM_WORDS = 64;
+    localparam integer IMEM_WORDS = 800;
     localparam integer MEM_BYTES  = IMEM_WORDS * 4;
 
     logic [31:0]  pc_i;
@@ -80,13 +80,13 @@ module tb_fetch;
 
         // Los cuatro bundles cargados desde program_test.mem.
         revisar_bundle("bundle 0", 32'h00000000,
-                       128'h44444444333333332222222211111111);
+                       128'h000000000000000000000000000C0029);
         revisar_bundle("bundle 1 (NOP)", 32'h00000010,
                        128'h00000000000000000000000000000000);
-        revisar_bundle("bundle 2", 32'h00000020,
-                       128'hDDDDDDDDCCCCCCCCBBBBBBBBAAAAAAAA);
-        revisar_bundle("bundle 3", 32'h00000030,
-                       128'h0123456789ABCDEF13579BDF2468ACE0);
+        revisar_bundle("bundle 5", 32'h00000050,
+                       128'h0000000000000000000000000000822B);
+        revisar_bundle("bundle 90", 32'h00005A0,
+                       128'h00000123000000000000000000000000);
 
         // Resto de la memoria inicializada en NOP.
         revisar_bundle("bundle 4 (sin cargar)", 32'h00000040, 128'b0);
