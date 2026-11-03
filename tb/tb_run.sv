@@ -7,7 +7,7 @@
 
 // Cuantas palabras de memoria de datos se vuelcan al terminar.
 `ifndef DUMP_PALABRAS
-  `define DUMP_PALABRAS 640
+  `define DUMP_PALABRAS 16384
 `endif
 
 module tb_run;

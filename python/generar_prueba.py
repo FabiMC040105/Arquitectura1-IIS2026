@@ -40,11 +40,20 @@ construir_constante("x3", 0xABCD5678)
 
 # Todas las subclaves se inicializan con 1,
 # igual que en la prueba funcional existente.
-instruccion("ALU: ADDI x4, x0, 1")
-instruccion("FEIST: AUTH x2, x3")
 
-for ronda in range(4):
+
+instruccion("FEIST: AUTH x2, x3")
+subllaves = [
+    0x00010203,
+    0x04050607,
+    0x08090A0B,
+    0x0C0D0E0F
+]
+
+for ronda, subllave in enumerate(subllaves):
+    construir_constante("x4", subllave)
     instruccion(f"FEIST: KSTORE 0, {ronda}, x4")
+    
 
 # x14: dirección del bloque actual.
 # x5: cantidad de bloques de 8 bytes pendientes.
