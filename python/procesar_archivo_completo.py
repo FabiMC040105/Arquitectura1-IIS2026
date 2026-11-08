@@ -200,10 +200,13 @@ def crear_contenedor(nombre_original, datos_originales, bytes_cifrados):
     )
 
 
-def leer_contenedor(contenido):
-    """Lee los metadatos y comprueba que el cifrado conserva todos los bloques."""
+def leer_contenedor(contenido, nombre_entrada):
+    """Lee los metadatos si existe el encabezado; si no, trata todo el
+    contenido como bytes cifrados crudos (sin nombre, tamaño ni huella)."""
     if len(contenido) < 18 or contenido[:8] != MAGIA:
-        raise ValueError("Formato no reconocido: se esperaba un .cifrado.bin VLIWFEI1")
+        relleno = (-len(contenido)) % TAMANO_BLOQUE
+        cifrado = contenido + bytes(relleno)
+        return nombre_entrada, len(contenido), None, cifrado
     tamano = int.from_bytes(contenido[8:16], "little")
     longitud_nombre = int.from_bytes(contenido[16:18], "little")
     fin_nombre = 18 + longitud_nombre
@@ -248,19 +251,25 @@ def cifrar(entrada, salida, trabajo):
 
 
 def descifrar(entrada, salida_opcional, trabajo):
-    nombre, tamano, huella, cifrado = leer_contenedor(entrada.read_bytes())
+    nombre, tamano, huella, cifrado = leer_contenedor(
+        entrada.read_bytes(), entrada.name
+    )
     salida = salida_opcional or ruta_recuperada(entrada.parent, nombre)
     print(f"\nArchivo cifrado: {entrada.name}")
     print(f"Nombre original: {nombre}")
     print(f"Tipo recuperado: {tipo_archivo(nombre)}")
     print(f"Tamaño original registrado: {tamano} bytes")
+    if huella is None:
+        print("Sin encabezado VLIWFEI1: se trata como cifrado crudo "
+              "(no hay verificación de integridad)")
     recuperado_con_relleno = procesar_bytes("descifrar", cifrado, trabajo)
     recuperado = recuperado_con_relleno[:tamano]
-    if hashlib.sha256(recuperado).digest() != huella:
-        raise RuntimeError("ERROR: verificación SHA-256 incorrecta; no se guardó el archivo")
+    if huella is not None:
+        if hashlib.sha256(recuperado).digest() != huella:
+            raise RuntimeError("ERROR: verificación SHA-256 incorrecta; no se guardó el archivo")
+        print("PASS: verificación SHA-256 correcta")
     salida.write_bytes(recuperado)
     print(f"Formato recuperado por firma: {identificar_formato(salida)}")
-    print(f"\nPASS: verificación SHA-256 correcta")
     print(f"PASS: recuperados {len(recuperado)} bytes")
     print(f"ARCHIVO RECUPERADO: {salida}")
     return salida

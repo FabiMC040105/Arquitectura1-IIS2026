@@ -15,7 +15,8 @@ module instruction_memory #(
     output logic [127:0] bundle_out,
     output logic         access_error
 );
-    localparam int BUNDLE_BYTES = 16;
+    localparam int BUNDLE_BYTES = 32;
+    
     localparam int BUNDLE_WIDTH = 128;
     localparam int NUM_BUNDLES = MEM_BYTES / BUNDLE_BYTES;
 

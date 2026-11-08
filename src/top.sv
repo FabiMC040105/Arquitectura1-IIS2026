@@ -21,7 +21,7 @@
 // El PC vive unicamente en pipeline_control, que tambien genera
 // los enable y flush de los registros que separan cada etapa.
 module top #(
-    parameter integer IMEM_WORDS = 996,
+    parameter integer IMEM_WORDS = 16384,
     parameter logic [31:0] RESET_PC = 32'h00000000,
     parameter PROGRAM_FILE = `PROGRAM_FILE,
     parameter DATA_FILE = `DATA_FILE
