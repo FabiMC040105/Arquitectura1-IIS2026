@@ -20,9 +20,6 @@ module dispatch (
     output logic valid_lsu_o,
     output logic valid_bru_o,
     output logic valid_feist_o,
-
-    // Validez general del bundle para la siguiente etapa.
-    output logic valid_o
 );
     logic [31:0] bundle_slice_1;
     logic [31:0] bundle_slice_2;
@@ -66,9 +63,6 @@ module dispatch (
 
             // Se conserva el PC del bundle.
             pc_o = pc_i;
-
-            // Se indica que el bundle recibido es valido.
-            valid_o = 1'b1;
 
             // Un opcode en cero representa NOP. Cada unidad tiene su propio ancho de opcode.
             valid_alu_o = (opcode_alu != 4'b0000);
