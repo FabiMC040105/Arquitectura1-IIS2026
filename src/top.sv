@@ -24,11 +24,27 @@ module top #(
     parameter integer IMEM_WORDS = 16384,
     parameter logic [31:0] RESET_PC = 32'h00000000,
     parameter PROGRAM_FILE = `PROGRAM_FILE,
-    parameter DATA_FILE = `DATA_FILE
+    parameter DATA_FILE = `DATA_FILE,
+
+    // 0: usa data_memory interna del Proyecto 1.
+    // 1: el LSU utiliza una interfaz externa de cache de datos.
+    parameter bit CACHE_IF_EN = 1'b0
 ) (
     input logic clk_i,          // Reloj del procesador
     input logic rst_i,          // Reinicio del procesador
-    input logic stall_i,        // Detiene el avance del pipeline
+    input logic stall_i,        // Stall externo de prueba/control
+
+    // Interfaz LSU <-> cache de datos. Solo se utiliza cuando
+    // CACHE_IF_EN = 1. Coincide con la interfaz CPU de l1_data_system.
+    input  logic        cache_ready_i,
+    input  logic        cache_stall_i,
+    input  logic [31:0] cache_read_data_i,
+
+    output logic        cache_read_o,
+    output logic        cache_write_o,
+    output logic [31:0] cache_addr_o,
+    output logic [31:0] cache_write_data_o,
+    output logic        global_stall_o,
 
     output logic [31:0] pc_o, // Direccion del bundle que Fetch lee.
     output logic [127:0] bundle_o,// Bundle completo de 128 bits que sale de Fetch.
@@ -135,6 +151,11 @@ module top #(
     logic flush_id_rr;
     logic flush_rr_ex;
     logic flush_ex_wb;
+
+    // Stall generado por la jerarquia de cache y stall efectivo
+    // aplicado a todo el procesador.
+    logic cache_stall;
+    logic global_stall;
 
 
     // =========================================================
@@ -359,6 +380,13 @@ module top #(
     logic        ex_lsu_mem_write;
     logic [31:0] ex_lsu_read_data;
     logic        ex_lsu_access_error;
+    logic        ex_lsu_addr_aligned;
+
+    // Salidas de la memoria interna del Proyecto 1. Se mantienen
+    // separadas para conservar data_memory_inst en el mismo nivel
+    // jerarquico que esperaban los testbenches existentes.
+    logic [31:0] legacy_lsu_read_data;
+    logic        legacy_lsu_access_error;
 
     logic        ex_bru_branch_taken;
     logic [31:0] ex_bru_branch_target;
@@ -418,6 +446,14 @@ module top #(
     // CONTROL DEL PIPELINE
     // =========================================================
 
+    // Cuando CACHE_IF_EN = 0 se conserva el comportamiento del
+    // Proyecto 1: solo stall_i puede detener el procesador.
+    // Cuando CACHE_IF_EN = 1, un miss/backpressure de cache tambien
+    // congela el PC y todos los registros del pipeline.
+    assign cache_stall = CACHE_IF_EN ? cache_stall_i : 1'b0;
+    assign global_stall = stall_i | cache_stall;
+    assign global_stall_o = global_stall;
+
     // Mantiene el unico registro de PC del procesador y genera
     // los enables y flush de los registros del pipeline.
     // El salto del BRU llega desde EX y la escritura a x1 llega
@@ -428,7 +464,7 @@ module top #(
         .clk_i(clk_i),
         .rst_i(rst_i),
 
-        .stall_i(stall_i),
+        .stall_i(global_stall),
 
         // Resultado del BRU en EX.
         .branch_taken_ex_i(ex_branch_taken),
@@ -869,21 +905,74 @@ module top #(
     );
 
 
+    // ---------------------------------------------------------
+    // INTERFAZ LSU -> CACHE / MEMORIA LEGACY
+    // ---------------------------------------------------------
+
+    // l1_data_system trabaja con palabras de 32 bits alineadas.
+    assign ex_lsu_addr_aligned =
+        (ex_lsu_effective_addr[1:0] == 2'b00);
+
+    // Durante un stall externo no se inicia una operacion nueva.
+    // Durante cache_stall la solicitud debe permanecer activa hasta
+    // que la cache la acepte, por eso NO se filtra con global_stall.
+    assign cache_read_o =
+        CACHE_IF_EN &&
+        ex_lsu_mem_read &&
+        ex_lsu_addr_aligned &&
+        !stall_i;
+
+    assign cache_write_o =
+        CACHE_IF_EN &&
+        ex_lsu_mem_write &&
+        ex_lsu_addr_aligned &&
+        !stall_i;
+
+    assign cache_addr_o = ex_lsu_effective_addr;
+    assign cache_write_data_o = ex_lsu_mem_write_data;
+
+    // ---------------------------------------------------------
+    // MEMORIA INTERNA LEGACY DEL PROYECTO 1
+    // ---------------------------------------------------------
+
+    // Se instancia SIEMPRE y se conserva el nombre data_memory_inst
+    // en este mismo nivel jerarquico. Esto mantiene compatibles los
+    // testbenches existentes que acceden, por ejemplo, a:
+    //     dut.data_memory_inst.memory[...]
+    //
+    // Cuando CACHE_IF_EN = 1 sus enables quedan en cero y la memoria
+    // interna no participa en la ejecucion.
     data_memory #(
         .DATA_FILE(DATA_FILE)
     ) data_memory_inst (
         .clk(clk_i),
         .rst(rst_i),
 
-        .mem_read(ex_lsu_mem_read),
-        .mem_write(ex_lsu_mem_write),
+        .mem_read(CACHE_IF_EN ? 1'b0 : ex_lsu_mem_read),
+        .mem_write(CACHE_IF_EN ? 1'b0 : ex_lsu_mem_write),
 
         .addr(ex_lsu_effective_addr),
         .write_data(ex_lsu_mem_write_data),
 
-        .read_data(ex_lsu_read_data),
-        .access_error(ex_lsu_access_error)
+        .read_data(legacy_lsu_read_data),
+        .access_error(legacy_lsu_access_error)
     );
+
+    // Seleccion de la fuente de datos/error segun el modo.
+    // En modo cache, una direccion desalineada se rechaza localmente
+    // y no se envia a L1, evitando esperar una respuesta imposible.
+    assign ex_lsu_access_error =
+        CACHE_IF_EN
+            ? ((ex_lsu_mem_read || ex_lsu_mem_write) &&
+               !ex_lsu_addr_aligned)
+            : legacy_lsu_access_error;
+
+    // En el ciclo en que cache_ready_i se activa, cache_stall_i debe
+    // estar desactivado y EX/WB puede capturar el dato.
+    assign ex_lsu_read_data =
+        CACHE_IF_EN
+            ? (cache_ready_i ? cache_read_data_i : 32'b0)
+            : legacy_lsu_read_data;
 
 
     bru bru_inst (
@@ -912,7 +1001,7 @@ module top #(
     // de reloj de esta etapa, asi que sus enables deben filtrarse por
     // la validez del bundle: un bundle descartado por un flush no
     // puede autenticar ni escribir llaves.
-    assign ex_feist_active = ex_feist_valid & rr_ex_valid_out & ~stall_i;
+    assign ex_feist_active = ex_feist_valid & rr_ex_valid_out & ~global_stall;
 
     assign ex_feist_auth_req   = ex_feist_auth_en   & ex_feist_active;
     assign ex_feist_logout_req = ex_feist_logout_en & ex_feist_active;
@@ -1042,13 +1131,13 @@ module top #(
     assign regfile_wr_addr[0] = wb_alu_rd;
     assign regfile_wr_data[0] = wb_alu_result;
     assign regfile_wr_en[0]   = wb_alu_write_enable & ex_wb_valid_out &
-                                ~wb_alu_writes_pc;
+                                ~wb_alu_writes_pc & ~global_stall;
 
     // Puerto de escritura 1: dato leido por el LSU.
     assign regfile_wr_addr[1] = wb_lsu_rd;
     assign regfile_wr_data[1] = wb_lsu_data;
     assign regfile_wr_en[1]   = wb_lsu_write_enable & ex_wb_valid_out &
-                                ~wb_lsu_writes_pc;
+                                ~wb_lsu_writes_pc & ~global_stall;
 
     // Puertos de escritura 2 y 3: las dos mitades que produce una
     // ronda Feistel. Nunca transportan material de llave: solo las
@@ -1060,12 +1149,12 @@ module top #(
     assign regfile_wr_addr[2] = wb_feist_rdL;
     assign regfile_wr_data[2] = wb_feist_l;
     assign regfile_wr_en[2]   = wb_feist_write_enable & ex_wb_valid_out &
-                                (wb_feist_rdL != PC_REG);
+                                (wb_feist_rdL != PC_REG) & ~global_stall;
 
     assign regfile_wr_addr[3] = wb_feist_rdR;
     assign regfile_wr_data[3] = wb_feist_r;
     assign regfile_wr_en[3]   = wb_feist_write_enable & ex_wb_valid_out &
-                                (wb_feist_rdR != PC_REG);
+                                (wb_feist_rdR != PC_REG) & ~global_stall;
 
 
     // =========================================================
