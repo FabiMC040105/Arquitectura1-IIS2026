@@ -19,7 +19,7 @@ module dispatch (
     output logic valid_alu_o,
     output logic valid_lsu_o,
     output logic valid_bru_o,
-    output logic valid_feist_o,
+    output logic valid_feist_o
 );
     logic [31:0] bundle_slice_1;
     logic [31:0] bundle_slice_2;
@@ -50,7 +50,6 @@ module dispatch (
         valid_lsu_o   = 1'b0;
         valid_bru_o   = 1'b0;
         valid_feist_o = 1'b0;
-        valid_o       = 1'b0;
 
         // Solo se procesa el bundle si Fetch indica que es valido.
         if (valid_i) begin

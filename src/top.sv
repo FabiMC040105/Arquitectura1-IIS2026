@@ -24,16 +24,29 @@ module top #(
     parameter DATA_FILE = `DATA_FILE,
 
     // 0: usa data_memory interna del Proyecto 1.
-    // 1: el LSU utiliza una interfaz externa de cache de datos.
-    parameter bit CACHE_IF_EN = 1'b0
+    // 1: el LSU utiliza una interfaz de cache de datos (externa o interna,
+    //    segun CACHE_INTERNAL).
+    parameter bit CACHE_IF_EN = 1'b0,
+
+    // Solo aplica cuando CACHE_IF_EN = 1.
+    // 0: cache_*_i/o se conectan a un banco externo (testbench) que
+    //    implementa la cache fuera de este modulo.
+    // 1: top instancia internamente la jerarquia L1 -> L2 -> mem_subsystem
+    //    y los puertos cache_*_i/o quedan sin usar.
+    parameter bit CACHE_INTERNAL = 1'b0,
+
+    // Parametros de mem_subsystem cuando CACHE_INTERNAL = 1.
+    parameter integer MEM_EV_DEPTH  = 8,
+    parameter integer MEM_FIRST_LAT = 3
 ) (
     input logic clk_i,          // Reloj del procesador
     input logic clk_mem_i,
     input logic rst_i,          // Reinicio del procesador
     input logic stall_i,        // Stall externo de prueba/control
 
-    // Interfaz LSU <-> cache de datos. Solo se utiliza cuando
-    // CACHE_IF_EN = 1. Coincide con la interfaz CPU de l1_data_system.
+    // Interfaz LSU <-> cache de datos externa. Solo se utiliza cuando
+    // CACHE_IF_EN = 1 y CACHE_INTERNAL = 0. Coincide con la interfaz CPU
+    // de l1_data_system.
     input  logic        cache_ready_i,
     input  logic        cache_stall_i,
     input  logic [31:0] cache_read_data_i,
@@ -137,6 +150,13 @@ module top #(
     // aplicado a todo el procesador.
     logic cache_stall;
     logic global_stall;
+
+    // Respuesta de la cache hacia el LSU: viene de los puertos externos
+    // cuando CACHE_INTERNAL=0, o de l1_data_system cuando CACHE_INTERNAL=1.
+    // Declarados aqui para que pipeline_control (mas abajo) pueda usarlos.
+    logic        cache_resp_ready;
+    logic        cache_resp_stall;
+    logic [31:0] cache_resp_read_data;
 
 
     // =========================================================
@@ -419,8 +439,10 @@ module top #(
     // Cuando CACHE_IF_EN = 0 se conserva el comportamiento del
     // Proyecto 1: solo stall_i puede detener el procesador.
     // Cuando CACHE_IF_EN = 1, un miss/backpressure de cache tambien
-    // congela el PC y todos los registros del pipeline.
-    assign cache_stall = CACHE_IF_EN ? cache_stall_i : 1'b0;
+    // congela el PC y todos los registros del pipeline. cache_resp_stall
+    // proviene de l1_data_system (CACHE_INTERNAL=1) o de cache_stall_i
+    // (CACHE_INTERNAL=0).
+    assign cache_stall = CACHE_IF_EN ? cache_resp_stall : 1'b0;
     assign global_stall = stall_i | cache_stall;
     assign global_stall_o = global_stall;
 
@@ -854,23 +876,200 @@ module top #(
     assign ex_lsu_addr_aligned =
         (ex_lsu_effective_addr[1:0] == 2'b00);
 
+    // Solicitud de LOAD/STORE que el LSU presenta a la cache, sin importar
+    // si la jerarquia vive dentro (CACHE_INTERNAL=1) o fuera de top.
     // Durante un stall externo no se inicia una operacion nueva.
     // Durante cache_stall la solicitud debe permanecer activa hasta
     // que la cache la acepte, por eso NO se filtra con global_stall.
-    assign cache_read_o =
+    logic        cache_req_read;
+    logic        cache_req_write;
+    logic [31:0] cache_req_addr;
+    logic [31:0] cache_req_write_data;
+
+    // cache_resp_ready/stall/read_data se declaran arriba, junto al resto
+    // de senales de pipeline_control.
+
+    // Respuesta que entrega l1_data_system cuando CACHE_INTERNAL=1.
+    // Queda en cero si la jerarquia interna no esta instanciada.
+    logic        cache_internal_ready;
+    logic        cache_internal_stall;
+    logic [31:0] cache_internal_read_data;
+
+    assign cache_req_read =
         CACHE_IF_EN &&
         ex_lsu_mem_read &&
         ex_lsu_addr_aligned &&
         !stall_i;
 
-    assign cache_write_o =
+    assign cache_req_write =
         CACHE_IF_EN &&
         ex_lsu_mem_write &&
         ex_lsu_addr_aligned &&
         !stall_i;
 
-    assign cache_addr_o = ex_lsu_effective_addr;
-    assign cache_write_data_o = ex_lsu_mem_write_data;
+    assign cache_req_addr       = ex_lsu_effective_addr;
+    assign cache_req_write_data = ex_lsu_mem_write_data;
+
+    // Puertos externos: activos solo en modo CACHE_IF_EN=1 && !CACHE_INTERNAL.
+    // En modo interno quedan en cero para no dejar salidas en alta impedancia.
+    assign cache_read_o       = (CACHE_IF_EN && !CACHE_INTERNAL) ? cache_req_read       : 1'b0;
+    assign cache_write_o      = (CACHE_IF_EN && !CACHE_INTERNAL) ? cache_req_write      : 1'b0;
+    assign cache_addr_o       = (CACHE_IF_EN && !CACHE_INTERNAL) ? cache_req_addr       : 32'b0;
+    assign cache_write_data_o = (CACHE_IF_EN && !CACHE_INTERNAL) ? cache_req_write_data : 32'b0;
+
+    generate
+        if (CACHE_IF_EN && CACHE_INTERNAL) begin : g_cache_internal
+            // ---------------------------------------------------
+            // JERARQUIA DE MEMORIA INTERNA: L1 -> L2 -> MEM_SUBSYSTEM
+            // ---------------------------------------------------
+            wire        l2_req_valid, l2_req_ready;
+            wire [31:0] l2_req_addr;
+            wire        l2_resp_valid;
+            wire [255:0] l2_resp_data;
+
+            wire        l2_write_valid, l2_write_ready;
+            wire [31:0] l2_write_addr;
+            wire [31:0] l2_write_data;
+
+            wire        mem_req_valid, mem_req_ready, mem_req_write;
+            wire [31:0] mem_req_addr;
+            wire [255:0] mem_req_wdata;
+            wire        mem_resp_valid;
+            wire [255:0] mem_resp_data;
+
+            wire [31:0] read_hits, read_misses, write_hits, write_misses;
+            wire [3:0]  eviction_count;
+
+            wire        rd_req, rd_done;
+            wire [31:0] rd_addr;
+            wire [255:0] rd_data;
+
+            wire        ev_push, ev_full, ev_empty;
+            wire [31:0] ev_addr;
+            wire [255:0] ev_line;
+
+            l1_data_system l1_data_system_inst (
+                .clk(clk_i),
+                .rst(rst_i),
+
+                .cpu_read(cache_req_read),
+                .cpu_write(cache_req_write),
+                .cpu_addr(cache_req_addr),
+                .cpu_write_data(cache_req_write_data),
+
+                .cpu_read_data(cache_internal_read_data),
+                .cpu_ready(cache_internal_ready),
+                .cpu_stall(cache_internal_stall),
+
+                .l2_req_valid(l2_req_valid),
+                .l2_req_ready(l2_req_ready),
+                .l2_req_addr(l2_req_addr),
+
+                .l2_resp_valid(l2_resp_valid),
+                .l2_resp_data(l2_resp_data),
+
+                .l2_write_valid(l2_write_valid),
+                .l2_write_ready(l2_write_ready),
+                .l2_write_addr(l2_write_addr),
+                .l2_write_data(l2_write_data)
+            );
+
+            l2_data_system l2_data_system_inst (
+                .clk(clk_i),
+                .rst(rst_i),
+
+                .l2_req_valid(l2_req_valid),
+                .l2_req_ready(l2_req_ready),
+                .l2_req_addr(l2_req_addr),
+                .l2_resp_valid(l2_resp_valid),
+                .l2_resp_data(l2_resp_data),
+
+                .l2_write_valid(l2_write_valid),
+                .l2_write_ready(l2_write_ready),
+                .l2_write_addr(l2_write_addr),
+                .l2_write_data(l2_write_data),
+
+                .mem_req_valid(mem_req_valid),
+                .mem_req_ready(mem_req_ready),
+                .mem_req_write(mem_req_write),
+                .mem_req_addr(mem_req_addr),
+                .mem_req_wdata(mem_req_wdata),
+                .mem_resp_valid(mem_resp_valid),
+                .mem_resp_data(mem_resp_data),
+
+                .read_hits(read_hits),
+                .read_misses(read_misses),
+                .write_hits(write_hits),
+                .write_misses(write_misses),
+                .eviction_count(eviction_count)
+            );
+
+            l2_mem_bridge l2_mem_bridge_inst (
+                .clk(clk_i),
+                .rst(rst_i),
+
+                .mem_req_valid(mem_req_valid),
+                .mem_req_ready(mem_req_ready),
+                .mem_req_write(mem_req_write),
+                .mem_req_addr(mem_req_addr),
+                .mem_req_wdata(mem_req_wdata),
+                .mem_resp_valid(mem_resp_valid),
+                .mem_resp_data(mem_resp_data),
+
+                .rd_req(rd_req),
+                .rd_addr(rd_addr),
+                .rd_data(rd_data),
+                .rd_done(rd_done),
+
+                .ev_push(ev_push),
+                .ev_addr(ev_addr),
+                .ev_line(ev_line),
+                .ev_full(ev_full)
+            );
+
+            mem_subsystem #(
+                .EV_DEPTH(MEM_EV_DEPTH),
+                .FIRST_LAT(MEM_FIRST_LAT),
+                .DATA_FILE(DATA_FILE)
+            ) mem_subsystem_inst (
+                .clk(clk_i),
+                .clk_mem(clk_mem_i),
+                .rst(rst_i),
+
+                .rd_req(rd_req),
+                .rd_addr(rd_addr),
+                .rd_data(rd_data),
+                .rd_done(rd_done),
+
+                .ev_push(ev_push),
+                .ev_addr(ev_addr),
+                .ev_line(ev_line),
+                .ev_full(ev_full),
+                .ev_empty(ev_empty),
+
+                .idle(),
+                .timeout_err()
+            );
+        end
+    endgenerate
+
+    // Fuente de la respuesta de cache que consume el LSU: externa cuando
+    // CACHE_INTERNAL=0, interna (l1_data_system) cuando CACHE_INTERNAL=1.
+    always_comb begin
+        if (!CACHE_IF_EN) begin
+            cache_resp_ready = 1'b0;
+            cache_resp_stall = 1'b0;
+            cache_resp_read_data = 32'b0;
+        end else if (CACHE_INTERNAL) begin
+            cache_resp_ready     = cache_internal_ready;
+            cache_resp_stall     = cache_internal_stall;
+            cache_resp_read_data = cache_internal_read_data;
+        end else begin
+            cache_resp_ready     = cache_ready_i;
+            cache_resp_stall     = cache_stall_i;
+            cache_resp_read_data = cache_read_data_i;
+        end
+    end
 
     // ---------------------------------------------------------
     // MEMORIA INTERNA LEGACY DEL PROYECTO 1
@@ -908,11 +1107,13 @@ module top #(
                !ex_lsu_addr_aligned)
             : legacy_lsu_access_error;
 
-    // En el ciclo en que cache_ready_i se activa, cache_stall_i debe
-    // estar desactivado y EX/WB puede capturar el dato.
+    // En el ciclo en que cache_resp_ready se activa, cache_resp_stall debe
+    // estar desactivado y EX/WB puede capturar el dato. cache_resp_ready
+    // proviene de l1_data_system (CACHE_INTERNAL=1) o de cache_ready_i
+    // (CACHE_INTERNAL=0).
     assign ex_lsu_read_data =
         CACHE_IF_EN
-            ? (cache_ready_i ? cache_read_data_i : 32'b0)
+            ? (cache_resp_ready ? cache_resp_read_data : 32'b0)
             : legacy_lsu_read_data;
 
 
