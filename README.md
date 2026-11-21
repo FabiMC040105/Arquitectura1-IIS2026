@@ -304,3 +304,10 @@ Consultar el archivo [LICENSE](LICENSE) del repositorio.
 **CE4301 — Arquitectura de Computadores I**
 
 **Proyecto Grupal I — II Semestre 2026**
+
+## Integración experimental L1 + L2
+
+Se añadieron los módulos y testbenches de L2 junto a la implementación de L1.
+Consulta [`docs/integracion-l1-l2.md`](docs/integracion-l1-l2.md) y ejecuta
+`bash scripts/run_l2_tests.sh` para compilar y simular la batería de pruebas.
+La RAM de las pruebas es simulada; falta integración con el controlador de memoria principal y con el `top` del procesador.
