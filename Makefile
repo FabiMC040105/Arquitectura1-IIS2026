@@ -18,7 +18,8 @@ SRC = src/top.sv \
       src/feist_decoder.sv \
       src/key_vault.sv \
       src/pipeline_reg.sv \
-      src/pipeline_control.sv
+      src/pipeline_control.sv \
+      src/performance_counters.sv
 
 .PHONY: all check check-modules fetch dispatch top tb_top test clean
 
@@ -34,7 +35,7 @@ check-modules:
 	              lsu lsu_decoder data_memory \
 	              bru bru_decoder \
 	              crypto_unit feist_decoder key_vault \
-	              pipeline_reg pipeline_control; do \
+	              pipeline_reg pipeline_control performance_counters; do \
 	    echo ""; \
 	    echo "=== Comprobando $$module ==="; \
 	    $(IVERILOG) $(FLAGS) -s $$module -tnull $(SRC); \

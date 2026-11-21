@@ -32,7 +32,7 @@ module tb_cache_stall_pipeline;
     logic [159:0] if_id_hold;
     logic [166:0] id_rr_hold;
     logic [478:0] rr_ex_hold;
-    logic [178:0] ex_wb_hold;
+    logic [182:0] ex_wb_hold;
     logic [31:0] pc_before_hit;
 
     // -----------------------------------------------------------------
