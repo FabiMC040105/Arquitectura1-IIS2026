@@ -653,10 +653,8 @@ module top #(
     assign rr_alu_op2 = (rr_alu_rs2 == PC_REG) ? rr_pc : regfile_rd_data[1];
 
     // ===== LECTURAS DEL LSU (puertos 2 y 3) =====
-    // Puerto 2: registro base para la direccion efectiva.
-    assign regfile_rd_addr[2] = rr_lsu_base_reg_idx;
-    // Puerto 3: registro de datos a almacenar (para STORE).
-    assign regfile_rd_addr[3] = rr_lsu_data_reg_idx;
+    assign regfile_rd_addr[2] = rr_lsu_base_reg_idx; // registro base para la direccion efectiva.
+    assign regfile_rd_addr[3] = rr_lsu_data_reg_idx; // registro de datos a almacenar (para STORE).
 
     assign rr_lsu_base_addr  = (rr_lsu_base_reg_idx == PC_REG) ? rr_pc  : regfile_rd_data[2];
     assign rr_lsu_store_data = (rr_lsu_data_reg_idx == PC_REG) ? rr_pc : regfile_rd_data[3];
@@ -669,8 +667,7 @@ module top #(
     assign rr_bru_src2_value = (rr_bru_rs2 == PC_REG) ? rr_pc : regfile_rd_data[5];
 
     // ===== LECTURAS DE LA UNIDAD FEISTEL (puertos 6 y 7) =====
-    // Las tres operaciones que leen registros son mutuamente
-    // excluyentes, asi que comparten el mismo par de puertos:
+    // Las tres operaciones que leen registros son mutuamente excluyentes, asi que comparten el mismo par de puertos:
     //   AUTH   : rs1 -> puerto 6, rs2 -> puerto 7
     //   KSTORE : rs1 -> puerto 6
     //   FROUND : rsL -> puerto 6, rsR -> puerto 7
@@ -1003,5 +1000,4 @@ module top #(
     assign valid_feist_o = id_valid_feist;
 
     assign dispatch_valid_o = id_valid;
-
 endmodule
