@@ -1,3 +1,5 @@
+`timescale 1ns/1ps
+
 module flop_sync (
   input  logic clk_dst, rst, d,
   output logic q

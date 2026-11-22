@@ -51,10 +51,10 @@ module mem_subsystem #(
     // RAW hazard: read line address present in the buffer
     logic hazard;
     integer j;
-    always @* begin
+    always_comb begin
         hazard = 1'b0;
         for (j = 0; j < EV_DEPTH; j = j + 1)
-            if (valid[j] && (fifo_addr[j][31:5] == rd_addr[31:5]))
+            if (valid[j] && (((rd_addr ^ fifo_addr[j]) & 32'hFFFF_FFE0) == 32'd0))
                 hazard = 1'b1;
     end
 
