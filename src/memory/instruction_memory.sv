@@ -15,7 +15,7 @@ module instruction_memory #(
     output logic [127:0] bundle_out,
     output logic         access_error
 );
-    localparam int BUNDLE_BYTES = 32;
+    localparam int BUNDLE_BYTES = 16;
     
     localparam int BUNDLE_WIDTH = 128;
     localparam int NUM_BUNDLES = MEM_BYTES / BUNDLE_BYTES;
@@ -32,7 +32,7 @@ module instruction_memory #(
             memory[i] = 128'b0;
         end
 
-        $readmemh(PROGRAM_FILE, memory); // Cada línea de program.mem representa un bundlecompleto de 128 bits.
+        $readmemh(PROGRAM_FILE, memory); // Cada línea de program.mem representa un bundle completo de 128 bits.
     end
 
     always_comb begin

@@ -34,7 +34,7 @@ module top #(
     input logic rst_i,          // Reinicio del procesador
     input logic stall_i,        // Stall externo de prueba/control
 
-    output logic        global_stall_o,
+    output logic global_stall_o,
 
     // Contadores basicos de rendimiento del pipeline.
     output logic [63:0] perf_cycles_o,
