@@ -93,8 +93,6 @@ module tb_run;
     endtask
 
     // Vuelca las primeras palabras de la memoria de datos. La memoria es direccionable por bytes y little-endian.
-    // CACHE_IF_EN=1 (valor por defecto de top): la memoria real vive en
-    // mem_subsystem_inst.u_ctrl, no en data_memory_inst (que queda inactiva).
     task automatic volcar_memoria;
         begin
             $display("");
