@@ -36,6 +36,11 @@ module top #(
 
     output logic        global_stall_o,
 
+    // Contadores basicos de rendimiento del pipeline.
+    output logic [63:0] perf_cycles_o,
+    output logic [63:0] perf_bundles_o,
+    output logic [63:0] perf_instructions_o,
+
     output logic [31:0] pc_o, // Direccion del bundle que Fetch lee.
     output logic [127:0] bundle_o, // Bundle completo de 128 bits que sale de Fetch.
     output logic fetch_valid_o, // Indica si Fetch esta entregando un bundle valido.
@@ -90,15 +95,17 @@ module top #(
     //           4 + 160 + 8 + 2 + 2 + 1 + 1  = 178
     localparam integer W_RR_EX = 32 + 85 + 84 + 100 + 178;
 
-    // EX/WB transporta los resultados a escribir.
+    // EX/WB transporta los resultados a escribir y cuatro bits que
+    // indican cuales slots no-NOP forman parte del bundle retirado.
     //   PC                                      32
+    //   retire_slots                             4
     //   ALU   : resultado, rd, write_enable
     //           32 + 4 + 1                   =  37
     //   LSU   : dato leido, rd, write_enable
     //           32 + 4 + 1                   =  37
     //   FEIST : l_out, r_out, rdL, rdR, write_enable
     //           32 + 32 + 4 + 4 + 1          =  73
-    localparam integer W_EX_WB = 32 + 37 + 37 + 73;
+    localparam integer W_EX_WB = 32 + 4 + 37 + 37 + 73;
 
     localparam logic [3:0] PC_REG = 4'd1; // x1 es el PC. No se almacena en el register file: leerlo entrega el PC del bundle que lo lee y escribirlo redirige el PC.
 
@@ -370,6 +377,7 @@ module top #(
 
     // Campos desempaquetados en WB.
     logic [31:0] wb_pc;
+    logic [3:0]  wb_retire_slots;
 
     logic [31:0] wb_alu_result;
     logic [3:0]  wb_alu_rd;
@@ -1096,6 +1104,10 @@ module top #(
     assign ex_wb_data_in = {
         ex_pc,
 
+        // Actividad del bundle. Se propaga hasta WB para contar
+        // instrucciones retiradas, incluso STORE, BRU y FEIST sin writeback.
+        ex_feist_valid, ex_bru_valid, ex_lsu_valid, ex_alu_valid,
+
         // ALU
         ex_alu_result, ex_alu_rd,
         ex_alu_valid,
@@ -1127,6 +1139,7 @@ module top #(
 
     assign {
         wb_pc,
+        wb_retire_slots,
 
         wb_alu_result, wb_alu_rd,
         wb_alu_write_enable,
@@ -1173,6 +1186,56 @@ module top #(
     assign regfile_wr_addr[3] = wb_feist_rdR;
     assign regfile_wr_data[3] = wb_feist_r;
     assign regfile_wr_en[3]   = wb_feist_write_enable & ex_wb_valid_out & (wb_feist_rdR != PC_REG) & ~global_stall;
+
+    // =========================================================
+    // CONTADORES DE RENDIMIENTO DEL PIPELINE
+    // =========================================================
+
+    // En esta integracion se conectan los tres contadores basicos que
+    // corresponden al pipeline: ciclos, bundles e instrucciones retiradas.
+    // Las metricas detalladas de L1/L2/memoria se conectaran en el nivel
+    // de integracion de la jerarquia de memoria.
+    performance_counters performance_counters_inst (
+        .clk_i(clk_i),
+        .rst_i(rst_i),
+        .measure_i(1'b1),
+
+        .retire_valid_i(ex_wb_valid_out),
+        .retire_slots_i(wb_retire_slots),
+        .pipeline_stall_i(global_stall),
+        .cache_stall_i(cache_stall),
+        .branch_stall_i(1'b0),
+        .stall_l2_lookup_i(1'b0),
+        .stall_memory_i(1'b0),
+        .stall_buffer_i(1'b0),
+
+        .l1_access_i(1'b0),
+        .l1_write_i(1'b0),
+        .l1_hit_i(1'b0),
+
+        .mem_accept_i(1'b0),
+        .mem_write_i(1'b0),
+        .mem_busy_i(1'b0),
+        .mem_word_i(1'b0),
+
+        .cycles_o(perf_cycles_o),
+        .bundles_o(perf_bundles_o),
+        .instructions_o(perf_instructions_o),
+
+        .cache_stall_cycles_o(),
+        .branch_stall_cycles_o(),
+        .l2_lookup_stall_cycles_o(),
+        .memory_stall_cycles_o(),
+        .buffer_stall_cycles_o(),
+        .l1_read_hits_o(),
+        .l1_read_misses_o(),
+        .l1_write_hits_o(),
+        .l1_write_misses_o(),
+        .mem_reads_o(),
+        .mem_writes_o(),
+        .mem_busy_cycles_o(),
+        .mem_words_o()
+    );
 
     // =========================================================
     // SALIDAS DE OBSERVACION

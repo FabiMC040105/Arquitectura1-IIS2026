@@ -46,7 +46,7 @@ check-modules:
 	              lsu lsu_decoder \
 	              bru bru_decoder \
 	              crypto_unit feist_decoder key_vault \
-	              pipeline_reg pipeline_control; do \
+	              pipeline_reg pipeline_control performance_counters; do \
 	    echo ""; \
 	    echo "=== Comprobando $$module ==="; \
 	    $(IVERILOG) $(FLAGS) -s $$module -tnull $(SRC); \
