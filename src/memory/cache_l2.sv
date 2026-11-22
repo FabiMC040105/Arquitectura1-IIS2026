@@ -51,7 +51,7 @@ module cache_l2 (
     integer s, w;
 
     // La consulta no modifica el contenido de L2.
-    always @(*) begin
+    always_comb begin
         lookup_hit  = 1'b0;
         lookup_data = 256'b0;
         for (integer k = 0; k < NUM_WAYS; k = k + 1) begin
@@ -64,26 +64,26 @@ module cache_l2 (
     end
 
     // Buscar la via que contiene la palabra a modificar.
-    always @(*) begin
+    always_comb begin
         write_hit = 1'b0;
         write_way = 2'b00;
         for (integer k = 0; k < NUM_WAYS; k = k + 1) begin
             if (valid_array[write_set][k] &&
                 tag_array[write_set][k] == write_tag) begin
                 write_hit = 1'b1;
-                write_way = k[1:0];
+                write_way = 2'(k);
             end
         end
     end
 
     // Primero una via invalida; si no hay, replacement Random.
     // Mientras no se haga refill, lfsr no cambia.
-    always @(*) begin
-        candidate_way = lfsr[1:0];
+    always_comb begin
+        candidate_way = 2'(lfsr);
         found_free = 1'b0;
         for (integer k = 0; k < NUM_WAYS; k = k + 1) begin
             if (!found_free && !valid_array[fill_set][k]) begin
-                candidate_way = k[1:0];
+                candidate_way = 2'(k);
                 found_free = 1'b1;
             end
         end
@@ -91,14 +91,14 @@ module cache_l2 (
 
     // Estos datos pertenecen SIEMPRE a candidate_way.
     // El controlador debe capturarlos junto con candidate_way.
-    always @(*) begin
+    always_comb begin
         victim_valid = valid_array[fill_set][candidate_way];
         victim_dirty = victim_valid && dirty_array[fill_set][candidate_way];
         victim_addr  = {tag_array[fill_set][candidate_way], fill_set, 5'b0};
         victim_data  = data_array[fill_set][candidate_way];
     end
 
-    always @(posedge clk or posedge rst) begin
+    always_ff @(posedge clk or posedge rst) begin
         if (rst) begin
             lfsr <= 16'hACE1;
             for (s = 0; s < NUM_SETS; s = s + 1) begin

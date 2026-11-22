@@ -85,8 +85,7 @@ module l2_controller (
         .victim_data(victim_data)
     );
 
-    assign cache_write = (state == HIT_WRITE) ||
-                         (state == POST_FILL_WRITE);
+    assign cache_write = (state == HIT_WRITE) || (state == POST_FILL_WRITE);
     assign cache_fill = (state == FILL);
 
     // Prioridad a lecturas de L1 cuando ambas solicitudes llegan juntas.
@@ -154,7 +153,8 @@ module l2_controller (
                     if (wait_counter != 0)
                         wait_counter <= wait_counter - 1'b1;
                     else if (pending_hit)
-                        state <= pending_write ? HIT_WRITE : HIT_RESPONSE;
+                        if (pending_write) state <= HIT_WRITE;
+                        else   state <= HIT_RESPONSE;
                     else
                         state <= MISS_PREPARE;
                 end
@@ -172,7 +172,8 @@ module l2_controller (
                     locked_way <= candidate_way;
                     locked_victim_addr <= victim_addr;
                     locked_victim_data <= victim_data;
-                    state <= (victim_valid && victim_dirty) ? EVICT : MEM_REQUEST;
+                    if (victim_valid && victim_dirty) state <= EVICT;
+                    else  state <= MEM_REQUEST;
                 end
                 EVICT: begin
                     // No reemplace hasta que la FIFO acepte la linea dirty.
@@ -191,7 +192,8 @@ module l2_controller (
                 end
                 FILL: begin
                     // cache_fill instala la nueva linea en locked_way.
-                    state <= pending_write ? POST_FILL_WRITE : POST_FILL_READ;
+                    if (pending_write) state <= POST_FILL_WRITE;
+                    else state <= POST_FILL_READ;
                 end
                 POST_FILL_READ: begin
                     l2_resp_data <= fetched_line;

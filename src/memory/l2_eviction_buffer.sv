@@ -30,7 +30,7 @@ module l2_eviction_buffer #(
     assign evict_ready = !full || do_pop;
     assign do_push = evict_valid && evict_ready;
 
-    always @(*) begin
+    always_comb begin
         wb_valid = !empty;
         wb_addr = 32'b0;
         wb_data = 256'b0;
@@ -41,7 +41,7 @@ module l2_eviction_buffer #(
     end
 
     integer idx;
-    always @(*) begin
+    always_comb begin
         raw_conflict = 1'b0;
         idx = 0;
         for (integer i = 0; i < DEPTH; i = i + 1) begin
@@ -49,7 +49,7 @@ module l2_eviction_buffer #(
             if (idx >= DEPTH)
                 idx = idx - DEPTH;
             if (i < count) begin
-                if (addr_fifo[idx][31:5] == check_addr[31:5])
+                if (((addr_fifo[idx] ^ check_addr) & 32'hFFFF_FFE0) == 32'd0)
                     raw_conflict = 1'b1;
             end
         end

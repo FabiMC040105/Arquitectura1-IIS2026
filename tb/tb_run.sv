@@ -16,8 +16,11 @@ module tb_run;
     localparam integer NOPS_FIN = 8;
 
     logic clk_i;
+    logic clk_mem_i;
     logic rst_i;
     logic stall_i;
+
+    logic global_stall_o;
 
     logic [31:0]  pc_o;
     logic [127:0] bundle_o;
@@ -36,8 +39,11 @@ module tb_run;
 
     top dut (
         .clk_i(clk_i),
+        .clk_mem_i(clk_mem_i),
         .rst_i(rst_i),
         .stall_i(stall_i),
+
+        .global_stall_o(global_stall_o),
 
         .pc_o(pc_o),
         .bundle_o(bundle_o),
@@ -59,6 +65,13 @@ module tb_run;
     initial begin
         clk_i = 1'b0;
         forever #5 clk_i = ~clk_i;
+    end
+
+    // clk_mem_i: dominio de reloj separado para la memoria principal.
+    // CPU a 100 MHz (periodo 10) y memoria a 25 MHz (periodo 40) => razon 4.
+    initial begin
+        clk_mem_i = 1'b0;
+        forever #20 clk_mem_i = ~clk_mem_i;
     end
 
     integer ciclos;
@@ -85,10 +98,10 @@ module tb_run;
             $display("");
             $display("--- Memoria de datos (primeras %0d palabras) ---", `DUMP_PALABRAS);
             for (i = 0; i < `DUMP_PALABRAS; i = i + 1) begin
-                palabra = {dut.data_memory_inst.memory[i*4 + 3],
-                           dut.data_memory_inst.memory[i*4 + 2],
-                           dut.data_memory_inst.memory[i*4 + 1],
-                           dut.data_memory_inst.memory[i*4 + 0]};
+                palabra = {dut.mem_subsystem_inst.u_ctrl.memory[i*4 + 3],
+                           dut.mem_subsystem_inst.u_ctrl.memory[i*4 + 2],
+                           dut.mem_subsystem_inst.u_ctrl.memory[i*4 + 1],
+                           dut.mem_subsystem_inst.u_ctrl.memory[i*4 + 0]};
                 direccion = i*4;
                 $display("  [%04h] = %08h", direccion, palabra);
             end

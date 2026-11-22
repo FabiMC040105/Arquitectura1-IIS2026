@@ -58,7 +58,6 @@ module dispatch (
         valid_lsu_o   = 1'b0;
         valid_bru_o   = 1'b0;
         valid_feist_o = 1'b0;
-        valid_o       = 1'b0;
 
         // Solo se procesa el bundle si Fetch indica que es valido.
         if (valid_i) begin

@@ -10,45 +10,31 @@ module l1_data_system (
     // El procesador solicita una lectura o escritura (nunca al mismo tiempo)
     input logic cpu_read,
     input logic cpu_write,
-
-    // Direccion de memoria para LOAD o STORE
-    input logic [31:0] cpu_addr,
-
-    // Dato que queremos guardar durante un STORE
-    input logic [31:0] cpu_write_data,
-
-    // Respuesta hacia el procesador
-    output wire [31:0] cpu_read_data,
-    output wire cpu_ready,
-    output wire cpu_stall,
-
-    // INTERFAZ DE LECTURA HACIA L2
-
-    // Solicitud de una linea completa de 256 bits
-    output wire l2_req_valid,
-    input logic l2_req_ready,
-    output wire [31:0] l2_req_addr,
+    input logic [31:0] cpu_addr, // Direccion de memoria para LOAD o STORE
+    input logic [31:0] cpu_write_data, // Dato que queremos guardar durante un STORE
 
     // Respuesta de L2 con la linea solicitada
     input logic l2_resp_valid,
     input logic [255:0] l2_resp_data,
 
+    input logic l2_write_ready, // L2 confirma que puede aceptar la escritura
 
-    // INTERFAZ DE ESCRITURA HACIA L2
+    // Solicitud de una linea completa de 256 bits
+    input logic l2_req_ready,
+    output wire l2_req_valid,
+    output wire [31:0] l2_req_addr,
+    
+    // Respuesta hacia el procesador
+    output wire [31:0] cpu_read_data,
+    output wire cpu_ready,
+    output wire cpu_stall,
 
-    // Nos indica que tenemos una escritura pendiente
-    output wire l2_write_valid,
-
-    // L2 confirma que puede aceptar la escritura
-    input logic l2_write_ready,
+    output wire l2_write_valid,// Nos indica que tenemos una escritura pendiente
 
     // Direccion y dato que enviaremos hacia L2
     output wire [31:0] l2_write_addr,
     output wire [31:0] l2_write_data
 );
-
-    // SEÑALES INTERNAS DE LA CACHE
-
     wire [20:0] tag;
     wire [5:0] set_index;
     wire [4:0] offset;
@@ -62,7 +48,6 @@ module l1_data_system (
     wire read_valid;
 
     // SENALES DEL CONTROLADOR MISS
-
     wire refill_valid;
     wire [31:0] refill_addr;
     wire [255:0] refill_data;

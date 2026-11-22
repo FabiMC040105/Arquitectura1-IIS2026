@@ -6,77 +6,44 @@ module l1_write_buffer #(
 )(
     input logic clk,
     input logic rst,
-
-    // ENTRADAS DESDE EL PROCESADOR / L1
-
-    // Nos indica que queremos guardar una escritura
-    input logic push,
-
-    // Direccion y dato de la escritura pendiente
+    input logic push, // Nos indica que queremos guardar una escritura
     input logic [31:0] push_addr,
     input logic [31:0] push_data,
-
-    // CONTROL DE SALIDA HACIA L2
-
-    // Indica que L2 acepto la escritura mas antigua. Cuando esto ocurre, podemos retirarla
-    input logic pop,
+    input logic pop,// Indica que L2 acepto la escritura mas antigua. Cuando esto ocurre, podemos retirarla
 
     // Escritura que esta esperando ser enviada a L2
     output logic [31:0] out_addr,
     output logic [31:0] out_data,
 
-    // Indica si tenemos una escritura disponible
-    output wire out_valid,
-
-
-    // ESTADO DE LA FIFO
-
-    // Indica que no quedan espacios disponibles
+    output wire out_valid, // Indica si tenemos una escritura disponible
     output wire full,
-
-    // Indica que no tenemos escrituras pendientes
     output wire empty,
-
-    // Cantidad de escrituras almacenadas
-    output logic [$clog2(DEPTH+1)-1:0] count
+    output logic [$clog2(DEPTH+1)-1:0] count // Cantidad de escrituras almacenadas
 );
 
     // MEMORIA INTERNA
-
     // Guardamos por separado las direcciones y los datos de cada escritura
     logic [31:0] addr_mem [0:DEPTH-1];
     logic [31:0] data_mem [0:DEPTH-1];
 
-    // Puntero donde guardaremos la siguiente escritura
-    logic [$clog2(DEPTH)-1:0] wr_ptr;
-
-    // Puntero de la escritura mas antigua
-    logic [$clog2(DEPTH)-1:0] rd_ptr;
+    logic [$clog2(DEPTH)-1:0] wr_ptr; // Puntero donde guardaremos la siguiente escritura
+    logic [$clog2(DEPTH)-1:0] rd_ptr; // Puntero de la escritura mas antigua
 
     // Señales internas que indican si realmente podemos insertar o retirar una escritura
     wire do_push;
     wire do_pop;
 
-
-    // ESTADO ACTUAL
-
     assign empty = (count == 0);
     assign full  = (count == DEPTH);
-
-    // Solo tenemos una salida valida cuando existe al menos una escritura pendiente
-    assign out_valid = !empty;
-
-    // Podemos retirar una escritura si la FIFO no esta vacia y recibimos la confirmacion
-    assign do_pop = pop && !empty;
+    assign out_valid = !empty; // Solo tenemos una salida valida cuando existe al menos una escritura pendiente
 
     // Permitimos insertar si existe espacio.
     // Si esta llena, tambien podemos insertar cuando simultaneamente retiramos una entrada
     assign do_push = push && (!full || do_pop);
+    assign do_pop = pop && !empty; // Podemos retirar una escritura si la FIFO no esta vacia y recibimos la confirmacion
 
     // SALIDA HACIA L2
-
     always_comb begin
-
         // Por defecto entregamos ceros cuando no tenemos ninguna escritura pendiente
         out_addr = 32'b0;
         out_data = 32'b0;
@@ -88,21 +55,14 @@ module l1_write_buffer #(
     end
 
     // ACTUALIZACION DE LA FIFO
-
     always_ff @(posedge clk or posedge rst) begin
-
         if (rst) begin
-
-            // Empezamos con la FIFO vacia
             wr_ptr <= '0;
             rd_ptr <= '0;
             count <= '0;
-
         end
         else begin
-
             // GUARDAR UNA NUEVA ESCRITURA
-
             if (do_push) begin
 
                 addr_mem[wr_ptr] <= push_addr;
@@ -116,7 +76,6 @@ module l1_write_buffer #(
             end
 
             // RETIRAR LA ESCRITURA MAS ANTIGUA
-
             if (do_pop) begin
 
                 // No necesitamos borrar los datos. Basta con avanzar el puntero
@@ -127,17 +86,11 @@ module l1_write_buffer #(
             end
 
             // ACTUALIZAR CANTIDAD DE ENTRADAS
-
             case ({do_push, do_pop})
-
-                // Entra una escritura y no sale ninguna
-                2'b10: count <= count + 1'b1;
-
-                // Sale una escritura y no entra ninguna
-                2'b01: count <= count - 1'b1;
-
-                // Si entran y salen al mismo tiempo, la cantidad de entradas no cambia
-                default: count <= count;
+                
+                2'b10: count <= count + 1'b1; // Entra una escritura y no sale ninguna
+                2'b01: count <= count - 1'b1; // Sale una escritura y no entra ninguna
+                default: count <= count; // Si entran y salen al mismo tiempo, la cantidad de entradas no cambia
 
             endcase
         end
