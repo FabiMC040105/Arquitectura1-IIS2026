@@ -5,14 +5,10 @@ module cache_l1 (
     input logic rst,
     input logic [31:0] addr,
 
-    // Nos indica cuando hay una solicitud del procesador
-    input logic access_valid,
-
-    // Nos indica que el procesador quiere escribir
-    input logic write_enable,
-
-    // Dato de 32 bits que queremos almacenar
-    input logic [31:0] write_data,
+    
+    input logic access_valid, // Nos indica cuando hay una solicitud del procesador
+    input logic write_enable, // Nos indica que el procesador quiere escribir
+    input logic [31:0] write_data, // Dato de 32 bits que queremos almacenar
 
     // Señales para recibir una linea desde el nivel inferior
     input logic         refill_valid,
@@ -28,49 +24,33 @@ module cache_l1 (
     output logic hit,
     output logic miss,
     output logic hit_way,
-
-    // Via que se utilizaria para guardar una linea nueva
-    output logic replace_way,
-
-    // Dato de 32 bits que leemos de la cache
-    output logic [31:0] read_data,
-
-    // Indica si el dato de lectura es valido
-    output logic read_valid
+    
+    output logic replace_way, // Via que se utilizaria para guardar una linea nueva
+    output logic [31:0] read_data, // Dato de 32 bits que leemos de la cache
+    output logic read_valid // Indica si el dato de lectura es valido
 );
 
     // CONFIGURACION DE LA CACHE
-
     localparam int CACHE_SIZE = 4096;
     localparam int LINE_SIZE  = 32;
     localparam int NUM_WAYS   = 2;
 
-    localparam int NUM_SETS =
-        CACHE_SIZE / (LINE_SIZE * NUM_WAYS);
+    localparam int NUM_SETS = CACHE_SIZE / (LINE_SIZE * NUM_WAYS);
 
     localparam int OFFSET_BITS = 5;
     localparam int INDEX_BITS  = 6;
     localparam int TAG_BITS    = 21;
 
     // DIVISION DE LA DIRECCION
-
     assign offset    = addr[4:0];
     assign set_index = addr[10:5];
     assign tag       = addr[31:11];
 
-    // ESTRUCTURAS INTERNAS
-
-    // Datos: 2 vias, 64 conjuntos, 256 bits
-    logic [255:0] data_array [0:1][0:63];
-
-    // Una etiqueta por linea
-    logic [20:0] tag_array [0:1][0:63];
-
-    // Un bit valido por linea
-    logic valid_array [0:1][0:63];
-
-    // Un bit LRU por conjunto
-    logic lru [0:63];
+    // ESTRUCTURAS INTERNAS    
+    logic [255:0] data_array [0:1][0:63]; // Datos: 2 vias, 64 conjuntos, 256 bits
+    logic [20:0] tag_array [0:1][0:63]; // Una etiqueta por linea
+    logic valid_array [0:1][0:63]; // Un bit valido por linea
+    logic lru [0:63]; // Un bit LRU por conjunto
     
 
     // RESET, RELLENO DE LINEAS Y LRU
@@ -216,10 +196,8 @@ module cache_l1 (
         : 256'b0;
 
     // Extraemos los 32 bits de la palabra solicitada
-    assign read_data = (access_valid && hit &&
-                        offset[1:0] == 2'b00)
-                       ? selected_line[word_index * 32 +: 32]
-                       : 32'b0;
+    assign read_data = (access_valid && hit && offset[1:0] == 2'b00) ? 
+                            selected_line[word_index * 32 +: 32] : 32'b0;
 
     // El dato solo es valido cuando existe una solicitud, encontramos la linea y la direccion esta alineada
     assign read_valid = access_valid && hit &&

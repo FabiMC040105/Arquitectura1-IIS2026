@@ -1,4 +1,3 @@
-
 `timescale 1ns/1ps
 
 module l1_miss_controller (
@@ -10,8 +9,8 @@ module l1_miss_controller (
     input logic [31:0] miss_addr,
 
     // Solicitud que enviamos a L2
-    output logic l2_req_valid,
     input logic l2_req_ready,
+    output logic l2_req_valid,
     output logic [31:0] l2_req_addr,
 
     // Respuesta que recibimos desde L2
@@ -37,15 +36,10 @@ module l1_miss_controller (
 
     state_t state;
 
-    // Guardamos la direccion solicitada
-    logic [31:0] pending_addr;
-
-    // Guardamos los datos recibidos desde L2
-    logic [255:0] pending_data;
-
+    logic [31:0] pending_addr; // Guardamos la direccion solicitada
+    logic [255:0] pending_data; // Guardamos los datos recibidos desde L2
 
     // CONTROL SECUENCIAL DE ESTADOS
-
     always_ff @(posedge clk or posedge rst) begin
 
         if (rst) begin
@@ -80,8 +74,7 @@ module l1_miss_controller (
                 end
 
                 INSTALL_LINE: begin
-                    // La linea se instala en L1 durante este estado
-                    state <= IDLE;
+                    state <= IDLE; // La linea se instala en L1 durante este estado
                 end
 
                 default: state <= IDLE;
@@ -90,20 +83,11 @@ module l1_miss_controller (
         end
     end
 
-    // SALIDAS DEL CONTROLADOR
-
-    // Mantenemos la solicitud hasta que L2 la acepte
-    assign l2_req_valid = (state == SEND_REQUEST);
-
-    // Enviamos la direccion del inicio de la linea
-    assign l2_req_addr = pending_addr;
-
-    // El controlador esta ocupado mientras procesa una solicitud de lectura
-    assign busy = (state != IDLE);
-
-    // Solo enviamos la linea a L1 cuando llegamos al estado de instalacion
-    assign refill_valid = (state == INSTALL_LINE);
-
+    // SALIDAS DEL CONTROLADOR    
+    assign l2_req_valid = (state == SEND_REQUEST); // Se mantiene la solicitud hasta que L2 la acepte
+    assign l2_req_addr = pending_addr; // Se envia la direccion del inicio de la linea
+    assign busy = (state != IDLE); // El controlador esta ocupado mientras procesa una solicitud de lectura
+    assign refill_valid = (state == INSTALL_LINE); // Solo enviamos la linea a L1 cuando llegamos al estado de instalacion
     assign refill_addr = pending_addr;
     assign refill_data = pending_data;
 

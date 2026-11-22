@@ -24,18 +24,11 @@ module top #(
     parameter DATA_FILE = `DATA_FILE,
 
     // 0: usa data_memory interna del Proyecto 1.
-    // 1: el LSU utiliza una interfaz de cache de datos (externa o interna,
-    //    segun CACHE_INTERNAL).
-    parameter bit CACHE_IF_EN = 1'b0,
+    // 1: el LSU utiliza la jerarquia de cache de datos L1 -> L2 -> mem_subsystem,
+    //    instanciada internamente en este modulo.
+    parameter bit CACHE_IF_EN = 1'b1,
 
-    // Solo aplica cuando CACHE_IF_EN = 1.
-    // 0: cache_*_i/o se conectan a un banco externo (testbench) que
-    //    implementa la cache fuera de este modulo.
-    // 1: top instancia internamente la jerarquia L1 -> L2 -> mem_subsystem
-    //    y los puertos cache_*_i/o quedan sin usar.
-    parameter bit CACHE_INTERNAL = 1'b0,
-
-    // Parametros de mem_subsystem cuando CACHE_INTERNAL = 1.
+    // Parametros de mem_subsystem cuando CACHE_IF_EN = 1.
     parameter integer MEM_EV_DEPTH  = 8,
     parameter integer MEM_FIRST_LAT = 3
 ) (
@@ -44,17 +37,6 @@ module top #(
     input logic rst_i,          // Reinicio del procesador
     input logic stall_i,        // Stall externo de prueba/control
 
-    // Interfaz LSU <-> cache de datos externa. Solo se utiliza cuando
-    // CACHE_IF_EN = 1 y CACHE_INTERNAL = 0. Coincide con la interfaz CPU
-    // de l1_data_system.
-    input  logic        cache_ready_i,
-    input  logic        cache_stall_i,
-    input  logic [31:0] cache_read_data_i,
-
-    output logic        cache_read_o,
-    output logic        cache_write_o,
-    output logic [31:0] cache_addr_o,
-    output logic [31:0] cache_write_data_o,
     output logic        global_stall_o,
 
     output logic [31:0] pc_o, // Direccion del bundle que Fetch lee.
@@ -151,9 +133,9 @@ module top #(
     logic cache_stall;
     logic global_stall;
 
-    // Respuesta de la cache hacia el LSU: viene de los puertos externos
-    // cuando CACHE_INTERNAL=0, o de l1_data_system cuando CACHE_INTERNAL=1.
-    // Declarados aqui para que pipeline_control (mas abajo) pueda usarlos.
+    // Respuesta de la cache hacia el LSU, entregada por l1_data_system
+    // cuando CACHE_IF_EN=1. Declarados aqui para que pipeline_control
+    // (mas abajo) pueda usarlos.
     logic        cache_resp_ready;
     logic        cache_resp_stall;
     logic [31:0] cache_resp_read_data;
@@ -440,8 +422,7 @@ module top #(
     // Proyecto 1: solo stall_i puede detener el procesador.
     // Cuando CACHE_IF_EN = 1, un miss/backpressure de cache tambien
     // congela el PC y todos los registros del pipeline. cache_resp_stall
-    // proviene de l1_data_system (CACHE_INTERNAL=1) o de cache_stall_i
-    // (CACHE_INTERNAL=0).
+    // proviene de l1_data_system.
     assign cache_stall = CACHE_IF_EN ? cache_resp_stall : 1'b0;
     assign global_stall = stall_i | cache_stall;
     assign global_stall_o = global_stall;
@@ -876,8 +857,7 @@ module top #(
     assign ex_lsu_addr_aligned =
         (ex_lsu_effective_addr[1:0] == 2'b00);
 
-    // Solicitud de LOAD/STORE que el LSU presenta a la cache, sin importar
-    // si la jerarquia vive dentro (CACHE_INTERNAL=1) o fuera de top.
+    // Solicitud de LOAD/STORE que el LSU presenta a la cache interna.
     // Durante un stall externo no se inicia una operacion nueva.
     // Durante cache_stall la solicitud debe permanecer activa hasta
     // que la cache la acepte, por eso NO se filtra con global_stall.
@@ -889,7 +869,7 @@ module top #(
     // cache_resp_ready/stall/read_data se declaran arriba, junto al resto
     // de senales de pipeline_control.
 
-    // Respuesta que entrega l1_data_system cuando CACHE_INTERNAL=1.
+    // Respuesta que entrega l1_data_system cuando CACHE_IF_EN=1.
     // Queda en cero si la jerarquia interna no esta instanciada.
     logic        cache_internal_ready;
     logic        cache_internal_stall;
@@ -910,15 +890,8 @@ module top #(
     assign cache_req_addr       = ex_lsu_effective_addr;
     assign cache_req_write_data = ex_lsu_mem_write_data;
 
-    // Puertos externos: activos solo en modo CACHE_IF_EN=1 && !CACHE_INTERNAL.
-    // En modo interno quedan en cero para no dejar salidas en alta impedancia.
-    assign cache_read_o       = (CACHE_IF_EN && !CACHE_INTERNAL) ? cache_req_read       : 1'b0;
-    assign cache_write_o      = (CACHE_IF_EN && !CACHE_INTERNAL) ? cache_req_write      : 1'b0;
-    assign cache_addr_o       = (CACHE_IF_EN && !CACHE_INTERNAL) ? cache_req_addr       : 32'b0;
-    assign cache_write_data_o = (CACHE_IF_EN && !CACHE_INTERNAL) ? cache_req_write_data : 32'b0;
-
     generate
-        if (CACHE_IF_EN && CACHE_INTERNAL) begin : g_cache_internal
+        if (CACHE_IF_EN) begin : g_cache_internal
             // ---------------------------------------------------
             // JERARQUIA DE MEMORIA INTERNA: L1 -> L2 -> MEM_SUBSYSTEM
             // ---------------------------------------------------
@@ -1053,21 +1026,17 @@ module top #(
         end
     endgenerate
 
-    // Fuente de la respuesta de cache que consume el LSU: externa cuando
-    // CACHE_INTERNAL=0, interna (l1_data_system) cuando CACHE_INTERNAL=1.
+    // Respuesta de cache que consume el LSU, entregada por l1_data_system
+    // cuando CACHE_IF_EN=1. Queda en cero en modo memoria legacy.
     always_comb begin
         if (!CACHE_IF_EN) begin
             cache_resp_ready = 1'b0;
             cache_resp_stall = 1'b0;
             cache_resp_read_data = 32'b0;
-        end else if (CACHE_INTERNAL) begin
+        end else begin
             cache_resp_ready     = cache_internal_ready;
             cache_resp_stall     = cache_internal_stall;
             cache_resp_read_data = cache_internal_read_data;
-        end else begin
-            cache_resp_ready     = cache_ready_i;
-            cache_resp_stall     = cache_stall_i;
-            cache_resp_read_data = cache_read_data_i;
         end
     end
 
@@ -1109,8 +1078,7 @@ module top #(
 
     // En el ciclo en que cache_resp_ready se activa, cache_resp_stall debe
     // estar desactivado y EX/WB puede capturar el dato. cache_resp_ready
-    // proviene de l1_data_system (CACHE_INTERNAL=1) o de cache_ready_i
-    // (CACHE_INTERNAL=0).
+    // proviene de l1_data_system.
     assign ex_lsu_read_data =
         CACHE_IF_EN
             ? (cache_resp_ready ? cache_resp_read_data : 32'b0)
