@@ -23,12 +23,9 @@ module top #(
     parameter PROGRAM_FILE = `PROGRAM_FILE,
     parameter DATA_FILE = `DATA_FILE,
 
-    // 0: usa data_memory interna del Proyecto 1.
-    // 1: el LSU utiliza la jerarquia de cache de datos L1 -> L2 -> mem_subsystem,
-    //    instanciada internamente en este modulo.
-    parameter bit CACHE_IF_EN = 1'b1,
-
-    // Parametros de mem_subsystem cuando CACHE_IF_EN = 1.
+    // Parametros de mem_subsystem. El LSU utiliza siempre la jerarquia
+    // de cache de datos L1 -> L2 -> mem_subsystem, instanciada
+    // internamente en este modulo.
     parameter integer MEM_EV_DEPTH  = 8,
     parameter integer MEM_FIRST_LAT = 3
 ) (
@@ -133,9 +130,8 @@ module top #(
     logic cache_stall;
     logic global_stall;
 
-    // Respuesta de la cache hacia el LSU, entregada por l1_data_system
-    // cuando CACHE_IF_EN=1. Declarados aqui para que pipeline_control
-    // (mas abajo) pueda usarlos.
+    // Respuesta de la cache hacia el LSU, entregada por l1_data_system.
+    // Declarados aqui para que pipeline_control (mas abajo) pueda usarlos.
     logic        cache_resp_ready;
     logic        cache_resp_stall;
     logic [31:0] cache_resp_read_data;
@@ -358,12 +354,6 @@ module top #(
     logic        ex_lsu_access_error;
     logic        ex_lsu_addr_aligned;
 
-    // Salidas de la memoria interna del Proyecto 1. Se mantienen
-    // separadas para conservar data_memory_inst en el mismo nivel
-    // jerarquico que esperaban los testbenches existentes.
-    logic [31:0] legacy_lsu_read_data;
-    logic        legacy_lsu_access_error;
-
     logic        ex_bru_branch_taken;
     logic [31:0] ex_bru_branch_target;
 
@@ -418,12 +408,9 @@ module top #(
     // CONTROL DEL PIPELINE
     // =========================================================
 
-    // Cuando CACHE_IF_EN = 0 se conserva el comportamiento del
-    // Proyecto 1: solo stall_i puede detener el procesador.
-    // Cuando CACHE_IF_EN = 1, un miss/backpressure de cache tambien
-    // congela el PC y todos los registros del pipeline. cache_resp_stall
-    // proviene de l1_data_system.
-    assign cache_stall = CACHE_IF_EN ? cache_resp_stall : 1'b0;
+    // Un miss/backpressure de cache congela el PC y todos los
+    // registros del pipeline. cache_resp_stall proviene de l1_data_system.
+    assign cache_stall = cache_resp_stall;
     assign global_stall = stall_i | cache_stall;
     assign global_stall_o = global_stall;
 
@@ -850,7 +837,7 @@ module top #(
 
 
     // ---------------------------------------------------------
-    // INTERFAZ LSU -> CACHE / MEMORIA LEGACY
+    // INTERFAZ LSU -> CACHE
     // ---------------------------------------------------------
 
     // l1_data_system trabaja con palabras de 32 bits alineadas.
@@ -869,20 +856,12 @@ module top #(
     // cache_resp_ready/stall/read_data se declaran arriba, junto al resto
     // de senales de pipeline_control.
 
-    // Respuesta que entrega l1_data_system cuando CACHE_IF_EN=1.
-    // Queda en cero si la jerarquia interna no esta instanciada.
-    logic        cache_internal_ready;
-    logic        cache_internal_stall;
-    logic [31:0] cache_internal_read_data;
-
     assign cache_req_read =
-        CACHE_IF_EN &&
         ex_lsu_mem_read &&
         ex_lsu_addr_aligned &&
         !stall_i;
 
     assign cache_req_write =
-        CACHE_IF_EN &&
         ex_lsu_mem_write &&
         ex_lsu_addr_aligned &&
         !stall_i;
@@ -890,199 +869,148 @@ module top #(
     assign cache_req_addr       = ex_lsu_effective_addr;
     assign cache_req_write_data = ex_lsu_mem_write_data;
 
-    generate
-        if (CACHE_IF_EN) begin : g_cache_internal
-            // ---------------------------------------------------
-            // JERARQUIA DE MEMORIA INTERNA: L1 -> L2 -> MEM_SUBSYSTEM
-            // ---------------------------------------------------
-            wire        l2_req_valid, l2_req_ready;
-            wire [31:0] l2_req_addr;
-            wire        l2_resp_valid;
-            wire [255:0] l2_resp_data;
-
-            wire        l2_write_valid, l2_write_ready;
-            wire [31:0] l2_write_addr;
-            wire [31:0] l2_write_data;
-
-            wire        mem_req_valid, mem_req_ready, mem_req_write;
-            wire [31:0] mem_req_addr;
-            wire [255:0] mem_req_wdata;
-            wire        mem_resp_valid;
-            wire [255:0] mem_resp_data;
-
-            wire [31:0] read_hits, read_misses, write_hits, write_misses;
-            wire [3:0]  eviction_count;
-
-            wire        rd_req, rd_done;
-            wire [31:0] rd_addr;
-            wire [255:0] rd_data;
-
-            wire        ev_push, ev_full, ev_empty;
-            wire [31:0] ev_addr;
-            wire [255:0] ev_line;
-
-            l1_data_system l1_data_system_inst (
-                .clk(clk_i),
-                .rst(rst_i),
-
-                .cpu_read(cache_req_read),
-                .cpu_write(cache_req_write),
-                .cpu_addr(cache_req_addr),
-                .cpu_write_data(cache_req_write_data),
-
-                .cpu_read_data(cache_internal_read_data),
-                .cpu_ready(cache_internal_ready),
-                .cpu_stall(cache_internal_stall),
-
-                .l2_req_valid(l2_req_valid),
-                .l2_req_ready(l2_req_ready),
-                .l2_req_addr(l2_req_addr),
-
-                .l2_resp_valid(l2_resp_valid),
-                .l2_resp_data(l2_resp_data),
-
-                .l2_write_valid(l2_write_valid),
-                .l2_write_ready(l2_write_ready),
-                .l2_write_addr(l2_write_addr),
-                .l2_write_data(l2_write_data)
-            );
-
-            l2_data_system l2_data_system_inst (
-                .clk(clk_i),
-                .rst(rst_i),
-
-                .l2_req_valid(l2_req_valid),
-                .l2_req_ready(l2_req_ready),
-                .l2_req_addr(l2_req_addr),
-                .l2_resp_valid(l2_resp_valid),
-                .l2_resp_data(l2_resp_data),
-
-                .l2_write_valid(l2_write_valid),
-                .l2_write_ready(l2_write_ready),
-                .l2_write_addr(l2_write_addr),
-                .l2_write_data(l2_write_data),
-
-                .mem_req_valid(mem_req_valid),
-                .mem_req_ready(mem_req_ready),
-                .mem_req_write(mem_req_write),
-                .mem_req_addr(mem_req_addr),
-                .mem_req_wdata(mem_req_wdata),
-                .mem_resp_valid(mem_resp_valid),
-                .mem_resp_data(mem_resp_data),
-
-                .read_hits(read_hits),
-                .read_misses(read_misses),
-                .write_hits(write_hits),
-                .write_misses(write_misses),
-                .eviction_count(eviction_count)
-            );
-
-            l2_mem_bridge l2_mem_bridge_inst (
-                .clk(clk_i),
-                .rst(rst_i),
-
-                .mem_req_valid(mem_req_valid),
-                .mem_req_ready(mem_req_ready),
-                .mem_req_write(mem_req_write),
-                .mem_req_addr(mem_req_addr),
-                .mem_req_wdata(mem_req_wdata),
-                .mem_resp_valid(mem_resp_valid),
-                .mem_resp_data(mem_resp_data),
-
-                .rd_req(rd_req),
-                .rd_addr(rd_addr),
-                .rd_data(rd_data),
-                .rd_done(rd_done),
-
-                .ev_push(ev_push),
-                .ev_addr(ev_addr),
-                .ev_line(ev_line),
-                .ev_full(ev_full)
-            );
-
-            mem_subsystem #(
-                .EV_DEPTH(MEM_EV_DEPTH),
-                .FIRST_LAT(MEM_FIRST_LAT),
-                .DATA_FILE(DATA_FILE)
-            ) mem_subsystem_inst (
-                .clk(clk_i),
-                .clk_mem(clk_mem_i),
-                .rst(rst_i),
-
-                .rd_req(rd_req),
-                .rd_addr(rd_addr),
-                .rd_data(rd_data),
-                .rd_done(rd_done),
-
-                .ev_push(ev_push),
-                .ev_addr(ev_addr),
-                .ev_line(ev_line),
-                .ev_full(ev_full),
-                .ev_empty(ev_empty),
-
-                .idle(),
-                .timeout_err()
-            );
-        end
-    endgenerate
-
-    // Respuesta de cache que consume el LSU, entregada por l1_data_system
-    // cuando CACHE_IF_EN=1. Queda en cero en modo memoria legacy.
-    always_comb begin
-        if (!CACHE_IF_EN) begin
-            cache_resp_ready = 1'b0;
-            cache_resp_stall = 1'b0;
-            cache_resp_read_data = 32'b0;
-        end else begin
-            cache_resp_ready     = cache_internal_ready;
-            cache_resp_stall     = cache_internal_stall;
-            cache_resp_read_data = cache_internal_read_data;
-        end
-    end
-
     // ---------------------------------------------------------
-    // MEMORIA INTERNA LEGACY DEL PROYECTO 1
+    // JERARQUIA DE MEMORIA: L1 -> L2 -> MEM_SUBSYSTEM
     // ---------------------------------------------------------
+    wire        l2_req_valid, l2_req_ready;
+    wire [31:0] l2_req_addr;
+    wire        l2_resp_valid;
+    wire [255:0] l2_resp_data;
 
-    // Se instancia SIEMPRE y se conserva el nombre data_memory_inst
-    // en este mismo nivel jerarquico. Esto mantiene compatibles los
-    // testbenches existentes que acceden, por ejemplo, a:
-    //     dut.data_memory_inst.memory[...]
-    //
-    // Cuando CACHE_IF_EN = 1 sus enables quedan en cero y la memoria
-    // interna no participa en la ejecucion.
-    data_memory #(
-        .DATA_FILE(DATA_FILE)
-    ) data_memory_inst (
-        .clk(clk_mem_i),
+    wire        l2_write_valid, l2_write_ready;
+    wire [31:0] l2_write_addr;
+    wire [31:0] l2_write_data;
+
+    wire        mem_req_valid, mem_req_ready, mem_req_write;
+    wire [31:0] mem_req_addr;
+    wire [255:0] mem_req_wdata;
+    wire        mem_resp_valid;
+    wire [255:0] mem_resp_data;
+
+    wire [31:0] read_hits, read_misses, write_hits, write_misses;
+    wire [3:0]  eviction_count;
+
+    wire        rd_req, rd_done;
+    wire [31:0] rd_addr;
+    wire [255:0] rd_data;
+
+    wire        ev_push, ev_full, ev_empty;
+    wire [31:0] ev_addr;
+    wire [255:0] ev_line;
+
+    l1_data_system l1_data_system_inst (
+        .clk(clk_i),
         .rst(rst_i),
 
-        .mem_read(CACHE_IF_EN ? 1'b0 : ex_lsu_mem_read),
-        .mem_write(CACHE_IF_EN ? 1'b0 : ex_lsu_mem_write),
+        .cpu_read(cache_req_read),
+        .cpu_write(cache_req_write),
+        .cpu_addr(cache_req_addr),
+        .cpu_write_data(cache_req_write_data),
 
-        .addr(ex_lsu_effective_addr),
-        .write_data(ex_lsu_mem_write_data),
+        .cpu_read_data(cache_resp_read_data),
+        .cpu_ready(cache_resp_ready),
+        .cpu_stall(cache_resp_stall),
 
-        .read_data(legacy_lsu_read_data),
-        .access_error(legacy_lsu_access_error)
+        .l2_req_valid(l2_req_valid),
+        .l2_req_ready(l2_req_ready),
+        .l2_req_addr(l2_req_addr),
+
+        .l2_resp_valid(l2_resp_valid),
+        .l2_resp_data(l2_resp_data),
+
+        .l2_write_valid(l2_write_valid),
+        .l2_write_ready(l2_write_ready),
+        .l2_write_addr(l2_write_addr),
+        .l2_write_data(l2_write_data)
     );
 
-    // Seleccion de la fuente de datos/error segun el modo.
-    // En modo cache, una direccion desalineada se rechaza localmente
-    // y no se envia a L1, evitando esperar una respuesta imposible.
+    l2_data_system l2_data_system_inst (
+        .clk(clk_i),
+        .rst(rst_i),
+
+        .l2_req_valid(l2_req_valid),
+        .l2_req_ready(l2_req_ready),
+        .l2_req_addr(l2_req_addr),
+        .l2_resp_valid(l2_resp_valid),
+        .l2_resp_data(l2_resp_data),
+
+        .l2_write_valid(l2_write_valid),
+        .l2_write_ready(l2_write_ready),
+        .l2_write_addr(l2_write_addr),
+        .l2_write_data(l2_write_data),
+
+        .mem_req_valid(mem_req_valid),
+        .mem_req_ready(mem_req_ready),
+        .mem_req_write(mem_req_write),
+        .mem_req_addr(mem_req_addr),
+        .mem_req_wdata(mem_req_wdata),
+        .mem_resp_valid(mem_resp_valid),
+        .mem_resp_data(mem_resp_data),
+
+        .read_hits(read_hits),
+        .read_misses(read_misses),
+        .write_hits(write_hits),
+        .write_misses(write_misses),
+        .eviction_count(eviction_count)
+    );
+
+    l2_mem_bridge l2_mem_bridge_inst (
+        .clk(clk_i),
+        .rst(rst_i),
+
+        .mem_req_valid(mem_req_valid),
+        .mem_req_ready(mem_req_ready),
+        .mem_req_write(mem_req_write),
+        .mem_req_addr(mem_req_addr),
+        .mem_req_wdata(mem_req_wdata),
+        .mem_resp_valid(mem_resp_valid),
+        .mem_resp_data(mem_resp_data),
+
+        .rd_req(rd_req),
+        .rd_addr(rd_addr),
+        .rd_data(rd_data),
+        .rd_done(rd_done),
+
+        .ev_push(ev_push),
+        .ev_addr(ev_addr),
+        .ev_line(ev_line),
+        .ev_full(ev_full)
+    );
+
+    mem_subsystem #(
+        .EV_DEPTH(MEM_EV_DEPTH),
+        .FIRST_LAT(MEM_FIRST_LAT),
+        .DATA_FILE(DATA_FILE)
+    ) mem_subsystem_inst (
+        .clk(clk_i),
+        .clk_mem(clk_mem_i),
+        .rst(rst_i),
+
+        .rd_req(rd_req),
+        .rd_addr(rd_addr),
+        .rd_data(rd_data),
+        .rd_done(rd_done),
+
+        .ev_push(ev_push),
+        .ev_addr(ev_addr),
+        .ev_line(ev_line),
+        .ev_full(ev_full),
+        .ev_empty(ev_empty),
+
+        .idle(),
+        .timeout_err()
+    );
+
+    // Una direccion desalineada se rechaza localmente y no se envia
+    // a L1, evitando esperar una respuesta imposible.
     assign ex_lsu_access_error =
-        CACHE_IF_EN
-            ? ((ex_lsu_mem_read || ex_lsu_mem_write) &&
-               !ex_lsu_addr_aligned)
-            : legacy_lsu_access_error;
+        (ex_lsu_mem_read || ex_lsu_mem_write) && !ex_lsu_addr_aligned;
 
     // En el ciclo en que cache_resp_ready se activa, cache_resp_stall debe
     // estar desactivado y EX/WB puede capturar el dato. cache_resp_ready
     // proviene de l1_data_system.
     assign ex_lsu_read_data =
-        CACHE_IF_EN
-            ? (cache_resp_ready ? cache_resp_read_data : 32'b0)
-            : legacy_lsu_read_data;
+        cache_resp_ready ? cache_resp_read_data : 32'b0;
 
 
     bru bru_inst (

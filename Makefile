@@ -19,7 +19,6 @@ SRC = src/top.sv \
 	  src/pipeline/fetch.sv \
       src/pipeline/dispatch.sv \
 	  src/memory/instruction_memory.sv \
-	  src/memory/data_memory.sv \
       src/memory/l1_data_system.sv \
       src/memory/cache_l1.sv \
       src/memory/l1_write_buffer.sv \
@@ -44,7 +43,7 @@ check-modules:
 	@set -e; \
 	for module in top fetch instruction_memory dispatch \
 	              register_file alu alu_decoder \
-	              lsu lsu_decoder data_memory \
+	              lsu lsu_decoder \
 	              bru bru_decoder \
 	              crypto_unit feist_decoder key_vault \
 	              pipeline_reg pipeline_control; do \

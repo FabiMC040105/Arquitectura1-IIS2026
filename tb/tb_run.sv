@@ -100,10 +100,10 @@ module tb_run;
             $display("");
             $display("--- Memoria de datos (primeras %0d palabras) ---", `DUMP_PALABRAS);
             for (i = 0; i < `DUMP_PALABRAS; i = i + 1) begin
-                palabra = {dut.g_cache_internal.mem_subsystem_inst.u_ctrl.memory[i*4 + 3],
-                           dut.g_cache_internal.mem_subsystem_inst.u_ctrl.memory[i*4 + 2],
-                           dut.g_cache_internal.mem_subsystem_inst.u_ctrl.memory[i*4 + 1],
-                           dut.g_cache_internal.mem_subsystem_inst.u_ctrl.memory[i*4 + 0]};
+                palabra = {dut.mem_subsystem_inst.u_ctrl.memory[i*4 + 3],
+                           dut.mem_subsystem_inst.u_ctrl.memory[i*4 + 2],
+                           dut.mem_subsystem_inst.u_ctrl.memory[i*4 + 1],
+                           dut.mem_subsystem_inst.u_ctrl.memory[i*4 + 0]};
                 direccion = i*4;
                 $display("  [%04h] = %08h", direccion, palabra);
             end
