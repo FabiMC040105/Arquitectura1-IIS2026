@@ -1,0 +1,4 @@
+benchmark,configuration,status,memory_mhz,cycles,bundles,instructions,cache_stall_cycles,branch_stall_cycles,l2_lookup_stall_cycles,memory_stall_cycles,buffer_stall_cycles,l1_read_hits,l1_read_misses,l1_write_hits,l1_write_misses,l2_read_hits,l2_read_misses,l2_write_hits,l2_write_misses,mem_reads,mem_writes,mem_busy_cycles,mem_words
+sequential,l1_l2_ram,PASS,25,2867,560,521,2302,0,224,1790,0,480,32,0,0,0,32,0,0,32,0,1726,256
+random,l1_l2_ram,PASS,25,13848,560,521,13283,0,2106,9093,0,228,284,0,0,118,166,0,0,166,0,8761,1328
+stride,l1_l2_ram,PASS,25,22068,560,521,21503,0,3840,14079,0,0,512,0,0,256,256,0,0,256,0,13567,2048

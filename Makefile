@@ -3,22 +3,34 @@ VVP = vvp
 FLAGS = -g2012 -Wall
 
 SRC = src/top.sv \
-      src/fetch.sv \
-      src/dispatch.sv \
-      src/instruction_memory.sv \
       src/register_file.sv \
-      src/alu.sv \
-      src/alu_decoder.sv \
-      src/lsu.sv \
-      src/lsu_decoder.sv \
-      src/data_memory.sv \
-      src/bru.sv \
-      src/bru_decoder.sv \
-      src/crypto_unit.sv \
-      src/feist_decoder.sv \
-      src/key_vault.sv \
-      src/pipeline_reg.sv \
-      src/pipeline_control.sv
+	  src/performance_counters.sv \
+      src/functional-units/alu.sv \
+      src/functional-units/alu_decoder.sv \
+      src/functional-units/lsu.sv \
+      src/functional-units/lsu_decoder.sv \
+      src/functional-units/bru.sv \
+      src/functional-units/bru_decoder.sv \
+      src/functional-units/crypto_unit.sv \
+      src/functional-units/feist_decoder.sv \
+      src/functional-units/key_vault.sv \
+      src/pipeline/pipeline_reg.sv \
+      src/pipeline/pipeline_control.sv \
+	  src/pipeline/fetch.sv \
+      src/pipeline/dispatch.sv \
+	  src/memory/instruction_memory.sv \
+      src/memory/l1_data_system.sv \
+      src/memory/cache_l1.sv \
+      src/memory/l1_write_buffer.sv \
+      src/memory/l1_miss_controller.sv \
+      src/memory/l2_data_system.sv \
+      src/memory/l2_controller.sv \
+      src/memory/cache_l2.sv \
+      src/memory/l2_eviction_buffer.sv \
+      src/memory/l2_mem_bridge.sv \
+      src/memory/mem_subsystem.sv \
+      src/memory/mem_controller.sv \
+      src/memory/flop_sync.sv
 
 .PHONY: all check check-modules fetch dispatch top tb_top test clean
 
@@ -31,10 +43,10 @@ check-modules:
 	@set -e; \
 	for module in top fetch instruction_memory dispatch \
 	              register_file alu alu_decoder \
-	              lsu lsu_decoder data_memory \
+	              lsu lsu_decoder \
 	              bru bru_decoder \
 	              crypto_unit feist_decoder key_vault \
-	              pipeline_reg pipeline_control; do \
+	              pipeline_reg pipeline_control performance_counters; do \
 	    echo ""; \
 	    echo "=== Comprobando $$module ==="; \
 	    $(IVERILOG) $(FLAGS) -s $$module -tnull $(SRC); \
@@ -58,6 +70,10 @@ dispatch:
 top:
 	$(IVERILOG) $(FLAGS) -s top -tnull $(SRC)
 
+mem:
+	$(IVERILOG) $(FLAGS) -o sim src/memory/flop_sync.sv src/memory/mem_controller.sv src/memory/mem_subsystem.sv tb/tb_mem.sv && \
+	$(VVP) sim
+
 # Ejecuta el procesador con un programa arbitrario del compilador.
 #   make run PROGRAM=salida_compilador.mem DATA=mis_datos.mem
 PROGRAM ?= program_test.mem
@@ -79,6 +95,10 @@ tb_top:
 feistel:
 	$(IVERILOG) $(FLAGS) -s tb_feistel -o sim_feistel tb/tb_feistel.sv $(SRC)
 	$(VVP) sim_feistel
+
+perf:
+	$(IVERILOG) $(FLAGS) -s tb_performance -o sim_perf tb/tb_performance.sv $(SRC)
+	$(VVP) sim_perf
 
 test: fetch dispatch tb_top feistel
 

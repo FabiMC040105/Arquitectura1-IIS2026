@@ -6,32 +6,71 @@
   `define PROGRAM_FILE "program_test.mem"
 `endif
 `ifndef DATA_FILE
-  `define DATA_FILE "input.mem"
+  `define DATA_FILE "data.mem"
 `endif
 
-// Modulo principal del procesador VLIW.
-// Integra el pipeline completo de cinco etapas:
-//
+// Modulo principal del procesador VLIW. Integra el pipeline completo de cinco etapas:
 //   IF  : Fetch lee el bundle apuntado por el PC.
 //   ID  : Dispatch separa el bundle y los decoders extraen campos.
 //   RR  : Lectura de operandos del register file.
 //   EX  : ALU, LSU y BRU operan sobre los operandos.
 //   WB  : Escritura de resultados al register file.
 //
-// El PC vive unicamente en pipeline_control, que tambien genera
-// los enable y flush de los registros que separan cada etapa.
+// El PC vive unicamente en pipeline_control, que tambien genera los enable y flush de los registros que separan cada etapa.
 module top #(
     parameter integer IMEM_WORDS = 16384,
     parameter logic [31:0] RESET_PC = 32'h00000000,
     parameter PROGRAM_FILE = `PROGRAM_FILE,
-    parameter DATA_FILE = `DATA_FILE
+    parameter DATA_FILE = `DATA_FILE,
+
+    // Parametros de mem_subsystem. El LSU utiliza siempre la jerarquia
+    // de cache de datos L1 -> L2 -> mem_subsystem, instanciada
+    // internamente en este modulo.
+    parameter integer MEM_EV_DEPTH  = 8,
+    parameter integer MEM_FIRST_LAT = 3
 ) (
     input logic clk_i,          // Reloj del procesador
+    input logic clk_mem_i,
     input logic rst_i,          // Reinicio del procesador
-    input logic stall_i,        // Detiene el avance del pipeline
+    input logic stall_i,        // Stall externo de prueba/control
+
+    // Flush total de L2 (y, en cascada, del eviction buffer hacia
+    // mem_subsystem) hacia memoria principal. Pensado para usarse al
+    // detectar fin de programa, ya que L2 es write-back y no hay otro
+    // mecanismo que saque las lineas dirty sin esta senal.
+    input  logic flush_i,
+    output logic flush_done_o,
+
+    output logic        global_stall_o,
+
+    // Contadores basicos de rendimiento del pipeline.
+    output logic [63:0] perf_cycles_o,
+    output logic [63:0] perf_bundles_o,
+    output logic [63:0] perf_instructions_o,
+
+    // Metricas de cache L2
+    output logic [63:0] perf_l2_read_hits_o,
+    output logic [63:0] perf_l2_read_misses_o,
+    output logic [63:0] perf_l2_write_hits_o,
+    output logic [63:0] perf_l2_write_misses_o,
+
+    output logic [63:0] perf_mem_reads_o,
+    output logic [63:0] perf_mem_writes_o,
+    output logic [63:0] perf_mem_busy_cycles_o,
+    output logic [63:0] perf_mem_words_o,
+    output logic [63:0] perf_cache_stall_cycles_o,
+    output logic [63:0] perf_branch_stall_cycles_o,
+    output logic [63:0] perf_l2_lookup_stall_cycles_o,
+    output logic [63:0] perf_memory_stall_cycles_o,
+    output logic [63:0] perf_buffer_stall_cycles_o,
+
+    output logic [63:0] perf_l1_read_hits_o,
+    output logic [63:0] perf_l1_read_misses_o,
+    output logic [63:0] perf_l1_write_hits_o,
+    output logic [63:0] perf_l1_write_misses_o,
 
     output logic [31:0] pc_o, // Direccion del bundle que Fetch lee.
-    output logic [127:0] bundle_o,// Bundle completo de 128 bits que sale de Fetch.
+    output logic [127:0] bundle_o, // Bundle completo de 128 bits que sale de Fetch.
     output logic fetch_valid_o, // Indica si Fetch esta entregando un bundle valido.
 
     output logic [31:0] instr_alu_o,
@@ -48,15 +87,13 @@ module top #(
     // Indica que Dispatch recibio un bundle valido. Puede valer 1 aunque todos los slots sean NOP.
     output logic dispatch_valid_o
 );
-
     // =========================================================
     // ANCHOS DE LOS REGISTROS DE PIPELINE
     // =========================================================
 
     localparam integer W_IF_ID = 128 + 32; // IF/ID transporta el bundle completo y su PC.
 
-    // ID/RR transporta los campos ya decodificados de las cuatro
-    // unidades, mas el PC y las validez de cada slot.
+    // ID/RR transporta los campos ya decodificados de las cuatro unidades, mas el PC y las validez de cada slot.
     //   PC                                      32
     //   ALU   : rd, rs1, rs2, opcode, imm_op, imm, valid
     //           4 + 4 + 4 + 3 + 1 + 12 + 1   =  29
@@ -70,8 +107,7 @@ module top #(
     //           4 + 12 + 16 + 2 + 2 + 1 + 1  =  38
     localparam integer W_ID_RR = 32 + 29 + 24 + 44 + 38;
 
-    // RR/EX transporta lo mismo que ID/RR salvo los indices de
-    // registro fuente, que se sustituyen por los valores leidos.
+    // RR/EX transporta lo mismo que ID/RR salvo los indices de registro fuente, que se sustituyen por los valores leidos.
     //   PC                                      32
     //   ALU   : op1, op2, rd, opcode, imm_op, imm, valid
     //           32 + 32 + 4 + 3 + 1 + 12 + 1 =  85
@@ -87,43 +123,31 @@ module top #(
     //           4 + 160 + 8 + 2 + 2 + 1 + 1  = 178
     localparam integer W_RR_EX = 32 + 85 + 84 + 100 + 178;
 
-    // EX/WB transporta los resultados a escribir.
+    // EX/WB transporta los resultados a escribir y cuatro bits que
+    // indican cuales slots no-NOP forman parte del bundle retirado.
     //   PC                                      32
+    //   retire_slots                             4
     //   ALU   : resultado, rd, write_enable
     //           32 + 4 + 1                   =  37
     //   LSU   : dato leido, rd, write_enable
     //           32 + 4 + 1                   =  37
     //   FEIST : l_out, r_out, rdL, rdR, write_enable
     //           32 + 32 + 4 + 4 + 1          =  73
-    localparam integer W_EX_WB = 32 + 37 + 37 + 73;
+    localparam integer W_EX_WB = 32 + 4 + 37 + 37 + 73;
 
-    // x1 es el PC. No se almacena en el register file: leerlo entrega
-    // el PC del bundle que lo lee y escribirlo redirige el PC.
-    localparam logic [3:0] PC_REG = 4'd1;
-
+    localparam logic [3:0] PC_REG = 4'd1; // x1 es el PC. No se almacena en el register file: leerlo entrega el PC del bundle que lo lee y escribirlo redirige el PC.
 
     // =========================================================
     // ETAPA IF
     // =========================================================
-
-    // PC que mantiene pipeline_control y que consume Fetch.
-    // Es el unico registro de PC del procesador.
-    logic [31:0] if_pc;
-
-    // Bundle completo que Fetch obtiene de la memoria.
-    logic [127:0] if_bundle;
-
-    // Validez del bundle generado por Fetch.
-    logic if_valid;
-
-    // Validez del error
-    logic if_access_error;
-
+    logic [31:0] if_pc; // PC que mantiene pipeline_control y que consume Fetch. Es el unico registro de PC del procesador.
+    logic [127:0] if_bundle; // Bundle completo que Fetch obtiene de la memoria.
+    logic if_valid; // Validez del bundle generado por Fetch.
+    logic if_access_error; // Validez del error
 
     // ---------------------------------------------------------
     // SENALES DE PIPELINE CONTROL
     // ---------------------------------------------------------
-
     // Enables de los registros del pipeline.
     logic enable_if_id;
     logic enable_id_rr;
@@ -136,15 +160,26 @@ module top #(
     logic flush_rr_ex;
     logic flush_ex_wb;
 
+    // Stall generado por la jerarquia de cache y stall efectivo
+    // aplicado a todo el procesador.
+    logic cache_stall;
+    logic global_stall;
+
+    // Respuesta de la cache hacia el LSU, entregada por l1_data_system.
+    // Declarados aqui para que pipeline_control (mas abajo) pueda usarlos.
+    logic        cache_resp_ready;
+    logic        cache_resp_stall;
+    logic [31:0] cache_resp_read_data;
+
 
     // =========================================================
     // ETAPA ID
     // =========================================================
-
     // Contenido empaquetado que entra y sale del registro IF/ID.
     logic [W_IF_ID-1:0] if_id_data_in;
     logic [W_IF_ID-1:0] if_id_data_out;
     logic               if_id_valid_out;
+    logic               valid_opcodes;
 
     // Campos desempaquetados a la entrada de ID.
     logic [127:0] id_bundle;
@@ -209,7 +244,6 @@ module top #(
     // =========================================================
     // ETAPA RR
     // =========================================================
-
     // Contenido empaquetado que entra y sale del registro ID/RR.
     logic [W_ID_RR-1:0] id_rr_data_in;
     logic [W_ID_RR-1:0] id_rr_data_out;
@@ -264,10 +298,8 @@ module top #(
     logic [31:0] rr_bru_src1_value;
     logic [31:0] rr_bru_src2_value;
 
-    // Direcciones multiplexadas de los dos puertos de lectura que
-    // comparte la unidad Feistel: AUTH usa dos registros, KSTORE uno
-    // y FROUND las dos mitades del bloque. Las operaciones son
-    // mutuamente excluyentes porque solo hay un slot Feistel.
+    // Direcciones multiplexadas de los dos puertos de lectura que comparte la unidad Feistel: AUTH usa dos registros, KSTORE uno
+    // y FROUND las dos mitades del bloque. Las operaciones son mutuamente excluyentes porque solo hay un slot Feistel.
     logic [3:0]  rr_feist_rd_addr_a;
     logic [3:0]  rr_feist_rd_addr_b;
 
@@ -277,11 +309,9 @@ module top #(
     logic [31:0] rr_feist_l_in;
     logic [31:0] rr_feist_r_in;
 
-
     // =========================================================
     // ETAPA EX
     // =========================================================
-
     // Contenido empaquetado que entra y sale del registro RR/EX.
     logic [W_RR_EX-1:0] rr_ex_data_in;
     logic [W_RR_EX-1:0] rr_ex_data_out;
@@ -329,9 +359,7 @@ module top #(
     logic        ex_feist_mode;
     logic        ex_feist_valid;
 
-    // Enables de la unidad Feistel ya filtrados por la validez del
-    // bundle: un bundle invalidado no puede autenticar ni tocar la
-    // boveda de llaves.
+    // Enables de la unidad Feistel ya filtrados por la validez del bundle: un bundle invalidado no puede autenticar ni tocar la boveda de llaves.
     logic        ex_feist_active;
     logic        ex_feist_auth_req;
     logic        ex_feist_logout_req;
@@ -359,18 +387,17 @@ module top #(
     logic        ex_lsu_mem_write;
     logic [31:0] ex_lsu_read_data;
     logic        ex_lsu_access_error;
+    logic        ex_lsu_addr_aligned;
 
     logic        ex_bru_branch_taken;
     logic [31:0] ex_bru_branch_target;
 
-    // Un salto solo redirige el PC si su slot es valido.
-    logic        ex_branch_taken;
+    logic        ex_branch_taken; // Un salto solo redirige el PC si su slot es valido.
 
 
     // =========================================================
     // ETAPA WB
     // =========================================================
-
     // Contenido empaquetado que entra y sale del registro EX/WB.
     logic [W_EX_WB-1:0] ex_wb_data_in;
     logic [W_EX_WB-1:0] ex_wb_data_out;
@@ -378,6 +405,7 @@ module top #(
 
     // Campos desempaquetados en WB.
     logic [31:0] wb_pc;
+    logic [3:0]  wb_retire_slots;
 
     logic [31:0] wb_alu_result;
     logic [3:0]  wb_alu_rd;
@@ -403,7 +431,6 @@ module top #(
     // ---------------------------------------------------------
     // SENALES DEL REGISTER FILE
     // ---------------------------------------------------------
-
     // Puertos de lectura: 8 registros
     logic [7:0][3:0] regfile_rd_addr;
     logic [7:0][31:0] regfile_rd_data;
@@ -413,22 +440,26 @@ module top #(
     logic [3:0][3:0] regfile_wr_addr;
     logic [3:0][31:0] regfile_wr_data;
 
-
     // =========================================================
     // CONTROL DEL PIPELINE
     // =========================================================
 
-    // Mantiene el unico registro de PC del procesador y genera
-    // los enables y flush de los registros del pipeline.
-    // El salto del BRU llega desde EX y la escritura a x1 llega
-    // desde WB.
+    // Un miss/backpressure de cache congela el PC y todos los
+    // registros del pipeline. cache_resp_stall proviene de l1_data_system.
+    assign cache_stall = cache_resp_stall;
+    assign global_stall = stall_i | cache_stall;
+    assign global_stall_o = global_stall;
+
+    // Mantiene el unico registro de PC del procesador y genera los enables y flush de los registros del pipeline. El salto del BRU llega desde 
+    // EX y la escritura a x1 llega desde WB.
+
     pipeline_control #(
         .RESET_PC(RESET_PC)
     ) pipeline_control_inst (
         .clk_i(clk_i),
         .rst_i(rst_i),
 
-        .stall_i(stall_i),
+        .stall_i(global_stall),
 
         // Resultado del BRU en EX.
         .branch_taken_ex_i(ex_branch_taken),
@@ -452,20 +483,15 @@ module top #(
         .flush_ex_wb_o(flush_ex_wb)
     );
 
-
     // =========================================================
     // ETAPA IF: BUSQUEDA DE INSTRUCCIONES
     // =========================================================
-
-    // Fetch no mantiene su propio PC: recibe el de
-    // pipeline_control y solo lee la memoria de instrucciones.
+    // Lee el pc de pipeline_control y solo lee la memoria de instrucciones.
     fetch #(
         .IMEM_WORDS(IMEM_WORDS),
         .PROGRAM_FILE(PROGRAM_FILE)
     ) fetch_inst (
-
-        // Direccion del bundle a leer.
-        .pc_i(if_pc),
+        .pc_i(if_pc), // Direccion del bundle a leer.
 
         // Salidas de Fetch conectadas a senales internas.
         .bundle_o(if_bundle),
@@ -473,11 +499,9 @@ module top #(
         .access_error_o(if_access_error)
     );
 
-
     // ---------------------------------------------------------
     // REGISTRO IF/ID
     // ---------------------------------------------------------
-
     assign if_id_data_in = {if_bundle, if_pc};
 
     pipeline_reg #(
@@ -497,16 +521,11 @@ module top #(
 
     assign {id_bundle, id_pc} = if_id_data_out;
 
-
     // =========================================================
     // ETAPA ID: SEPARACION Y DECODIFICACION
     // =========================================================
-
-    // Recibe el bundle completo y lo separa en sus cuatro slots.
-    // Dispatch no ejecuta las instrucciones: solamente las
-    // separa y genera las senales de validez correspondientes.
+    // Recibe el bundle completo y lo separa en sus cuatro slots. Dispatch no ejecuta las instrucciones: solamente las separa y genera las senales de validez correspondientes.
     dispatch dispatch_inst (
-
         // Entradas provenientes del registro IF/ID.
         .bundle_i(id_bundle),
         .pc_i(id_pc),
@@ -525,10 +544,8 @@ module top #(
         .valid_alu_o(id_valid_alu),
         .valid_lsu_o(id_valid_lsu),
         .valid_bru_o(id_valid_bru),
-        .valid_feist_o(id_valid_feist),
-        .valid_o(id_valid)
+        .valid_feist_o(id_valid_feist)
     );
-
 
     alu_decoder alu_decoder_inst (
         .instr_alu_o(id_instr_alu),
@@ -542,7 +559,6 @@ module top #(
         .imm(id_alu_imm),
         .illegal_o(id_alu_illegal_instr)
     );
-
 
     lsu_decoder lsu_decoder_inst (
         .instr(id_instr_lsu),
@@ -561,7 +577,6 @@ module top #(
         .illegal_instr(id_lsu_illegal_instr)
     );
 
-
     bru_decoder bru_decoder_inst (
         .valid_i(id_valid_bru),
         .instr_i(id_instr_bru),
@@ -573,7 +588,6 @@ module top #(
         .offset_o(id_bru_offset),
         .illegal_o(id_bru_illegal_instr)
     );
-
 
     feist_decoder feist_decoder_inst (
         .instr_feist_i(id_instr_feist),
@@ -602,11 +616,9 @@ module top #(
         .mode_o(id_feist_mode)
     );
 
-
     // ---------------------------------------------------------
     // REGISTRO ID/RR
     // ---------------------------------------------------------
-
     assign id_rr_data_in = {
         id_dispatch_pc,
 
@@ -632,6 +644,11 @@ module top #(
         id_feist_key, id_feist_round, id_feist_mode,
         id_valid_feist
     };
+
+    always_comb begin 
+        valid_opcodes = !id_feist_illegal_opcode && !id_bru_illegal_instr && !id_lsu_illegal_instr && !id_alu_illegal_instr;
+        id_valid = if_id_valid_out && valid_opcodes;
+    end
 
     pipeline_reg #(
         .WIDTH(W_ID_RR)
@@ -674,7 +691,6 @@ module top #(
     // =========================================================
     // ETAPA RR: LECTURA DEL REGISTER FILE
     // =========================================================
-
     register_file #(
         .WIDTH(32),
         .DEPTH(16),
@@ -694,9 +710,7 @@ module top #(
         .wr_data(regfile_wr_data)
     );
 
-    // Leer x1 entrega el PC del bundle que esta en RR, no el contenido
-    // del register file, donde x1 nunca se escribe.
-
+    // Leer x1 entrega el PC del bundle que esta en RR, no el contenido del register file, donde x1 nunca se escribe.
     // ===== LECTURAS DEL ALU (puertos 0 y 1) =====
     assign regfile_rd_addr[0] = rr_alu_rs1;
     assign regfile_rd_addr[1] = rr_alu_rs2;
@@ -705,15 +719,11 @@ module top #(
     assign rr_alu_op2 = (rr_alu_rs2 == PC_REG) ? rr_pc : regfile_rd_data[1];
 
     // ===== LECTURAS DEL LSU (puertos 2 y 3) =====
-    // Puerto 2: registro base para la direccion efectiva.
-    assign regfile_rd_addr[2] = rr_lsu_base_reg_idx;
-    // Puerto 3: registro de datos a almacenar (para STORE).
-    assign regfile_rd_addr[3] = rr_lsu_data_reg_idx;
+    assign regfile_rd_addr[2] = rr_lsu_base_reg_idx; // registro base para la direccion efectiva.
+    assign regfile_rd_addr[3] = rr_lsu_data_reg_idx; // registro de datos a almacenar (para STORE).
 
-    assign rr_lsu_base_addr  = (rr_lsu_base_reg_idx == PC_REG) ? rr_pc
-                                                               : regfile_rd_data[2];
-    assign rr_lsu_store_data = (rr_lsu_data_reg_idx == PC_REG) ? rr_pc
-                                                               : regfile_rd_data[3];
+    assign rr_lsu_base_addr  = (rr_lsu_base_reg_idx == PC_REG) ? rr_pc  : regfile_rd_data[2];
+    assign rr_lsu_store_data = (rr_lsu_data_reg_idx == PC_REG) ? rr_pc : regfile_rd_data[3];
 
     // ===== LECTURAS DEL BRU (puertos 4 y 5) =====
     assign regfile_rd_addr[4] = rr_bru_rs1;
@@ -723,8 +733,7 @@ module top #(
     assign rr_bru_src2_value = (rr_bru_rs2 == PC_REG) ? rr_pc : regfile_rd_data[5];
 
     // ===== LECTURAS DE LA UNIDAD FEISTEL (puertos 6 y 7) =====
-    // Las tres operaciones que leen registros son mutuamente
-    // excluyentes, asi que comparten el mismo par de puertos:
+    // Las tres operaciones que leen registros son mutuamente excluyentes, asi que comparten el mismo par de puertos:
     //   AUTH   : rs1 -> puerto 6, rs2 -> puerto 7
     //   KSTORE : rs1 -> puerto 6
     //   FROUND : rsL -> puerto 6, rsR -> puerto 7
@@ -749,21 +758,17 @@ module top #(
     assign regfile_rd_addr[7] = rr_feist_rd_addr_b;
 
     // x1 se sustituye por el PC igual que en el resto de unidades.
-    assign rr_feist_auth_val1 = (rr_feist_rd_addr_a == PC_REG) ? rr_pc
-                                                               : regfile_rd_data[6];
-    assign rr_feist_auth_val2 = (rr_feist_rd_addr_b == PC_REG) ? rr_pc
-                                                               : regfile_rd_data[7];
+    assign rr_feist_auth_val1 = (rr_feist_rd_addr_a == PC_REG) ? rr_pc : regfile_rd_data[6];
+    assign rr_feist_auth_val2 = (rr_feist_rd_addr_b == PC_REG) ? rr_pc : regfile_rd_data[7];
 
     // KSTORE y FROUND reutilizan los mismos valores leidos.
     assign rr_feist_kstore_val = rr_feist_auth_val1;
     assign rr_feist_l_in       = rr_feist_auth_val1;
     assign rr_feist_r_in       = rr_feist_auth_val2;
 
-
     // ---------------------------------------------------------
     // REGISTRO RR/EX
     // ---------------------------------------------------------
-
     assign rr_ex_data_in = {
         rr_pc,
 
@@ -849,15 +854,13 @@ module top #(
         .zero(ex_alu_zero)
     );
 
-
     lsu lsu_inst (
         .base_addr(ex_lsu_base_addr),
         .offset(ex_lsu_offset),
 
         .store_data(ex_lsu_store_data),
 
-        // Una operacion de memoria solo se emite si el bundle que
-        // la contiene sigue siendo valido en esta etapa.
+        // Una operacion de memoria solo se emite si el bundle que la contiene sigue siendo valido en esta etapa.
         .load_enable(ex_lsu_load_enable & ex_lsu_valid & rr_ex_valid_out),
         .store_enable(ex_lsu_store_enable & ex_lsu_valid & rr_ex_valid_out & ~stall_i),
 
@@ -869,21 +872,232 @@ module top #(
     );
 
 
-    data_memory #(
-        .DATA_FILE(DATA_FILE)
-    ) data_memory_inst (
+    // ---------------------------------------------------------
+    // INTERFAZ LSU -> CACHE
+    // ---------------------------------------------------------
+
+    // l1_data_system trabaja con palabras de 32 bits alineadas.
+    assign ex_lsu_addr_aligned =
+        (ex_lsu_effective_addr[1:0] == 2'b00);
+
+    // Solicitud de LOAD/STORE que el LSU presenta a la cache interna.
+    // Durante un stall externo no se inicia una operacion nueva.
+    // Durante cache_stall la solicitud debe permanecer activa hasta
+    // que la cache la acepte, por eso NO se filtra con global_stall.
+    logic        cache_req_read;
+    logic        cache_req_write;
+    logic [31:0] cache_req_addr;
+    logic [31:0] cache_req_write_data;
+
+    // cache_resp_ready/stall/read_data se declaran arriba, junto al resto
+    // de senales de pipeline_control.
+
+    assign cache_req_read =
+        ex_lsu_mem_read &&
+        ex_lsu_addr_aligned &&
+        !stall_i;
+
+    assign cache_req_write =
+        ex_lsu_mem_write &&
+        ex_lsu_addr_aligned &&
+        !stall_i;
+
+    assign cache_req_addr       = ex_lsu_effective_addr;
+    assign cache_req_write_data = ex_lsu_mem_write_data;
+
+    // ---------------------------------------------------------
+    // JERARQUIA DE MEMORIA
+    // ---------------------------------------------------------
+    wire        l2_req_valid, l2_req_ready;
+    wire [31:0] l2_req_addr;
+    wire        l2_resp_valid;
+    wire [255:0] l2_resp_data;
+
+    wire        l2_write_valid, l2_write_ready;
+    wire [31:0] l2_write_addr;
+    wire [31:0] l2_write_data;
+
+    wire        mem_req_valid, mem_req_ready, mem_req_write;
+    wire [31:0] mem_req_addr;
+    wire [255:0] mem_req_wdata;
+    wire        mem_resp_valid;
+    wire [255:0] mem_resp_data;
+
+    wire [31:0] read_hits, read_misses, write_hits, write_misses;
+
+    // Exportar contadores reales de L2
+    assign perf_l2_read_hits_o =
+        {32'b0, read_hits};
+
+    assign perf_l2_read_misses_o =
+        {32'b0, read_misses};
+
+    assign perf_l2_write_hits_o =
+        {32'b0, write_hits};
+
+    assign perf_l2_write_misses_o =
+        {32'b0, write_misses};
+    wire [3:0]  eviction_count;
+
+    wire        rd_req, rd_done;
+    wire [31:0] rd_addr;
+    wire [255:0] rd_data;
+
+    wire        ev_push, ev_full, ev_empty;
+    wire [31:0] ev_addr;
+    wire [255:0] ev_line;
+
+    wire l1_perf_access;
+    wire l1_perf_write;
+    wire l1_perf_hit;
+
+    l1_data_system l1_data_system_inst (
         .clk(clk_i),
         .rst(rst_i),
 
-        .mem_read(ex_lsu_mem_read),
-        .mem_write(ex_lsu_mem_write),
+        .cpu_read(cache_req_read),
+        .cpu_write(cache_req_write),
+        .cpu_addr(cache_req_addr),
+        .cpu_write_data(cache_req_write_data),
 
-        .addr(ex_lsu_effective_addr),
-        .write_data(ex_lsu_mem_write_data),
+        .cpu_read_data(cache_resp_read_data),
+        .cpu_ready(cache_resp_ready),
+        .cpu_stall(cache_resp_stall),
+        .perf_access_o(l1_perf_access),
+        .perf_write_o(l1_perf_write),
+        .perf_hit_o(l1_perf_hit),
 
-        .read_data(ex_lsu_read_data),
-        .access_error(ex_lsu_access_error)
+        .l2_req_valid(l2_req_valid),
+        .l2_req_ready(l2_req_ready),
+        .l2_req_addr(l2_req_addr),
+
+        .l2_resp_valid(l2_resp_valid),
+        .l2_resp_data(l2_resp_data),
+
+        .l2_write_valid(l2_write_valid),
+        .l2_write_ready(l2_write_ready),
+        .l2_write_addr(l2_write_addr),
+        .l2_write_data(l2_write_data)
     );
+
+    wire l2_perf_lookup;
+    wire l2_perf_memory_wait;
+    wire l2_perf_buffer_wait;
+
+    wire l2_flush_done;
+
+    l2_data_system #(
+        .EV_DEPTH(MEM_EV_DEPTH)
+    ) l2_data_system_inst (
+        .clk(clk_i),
+        .rst(rst_i),
+        .flush(flush_i),
+        .flush_done_o(l2_flush_done),
+
+        .l2_req_valid(l2_req_valid),
+        .l2_req_ready(l2_req_ready),
+        .l2_req_addr(l2_req_addr),
+        .l2_resp_valid(l2_resp_valid),
+        .l2_resp_data(l2_resp_data),
+
+        .l2_write_valid(l2_write_valid),
+        .l2_write_ready(l2_write_ready),
+        .l2_write_addr(l2_write_addr),
+        .l2_write_data(l2_write_data),
+
+        .mem_req_valid(mem_req_valid),
+        .mem_req_ready(mem_req_ready),
+        .mem_req_write(mem_req_write),
+        .mem_req_addr(mem_req_addr),
+        .mem_req_wdata(mem_req_wdata),
+        .mem_resp_valid(mem_resp_valid),
+        .mem_resp_data(mem_resp_data),
+
+        .read_hits(read_hits),
+        .read_misses(read_misses),
+        .write_hits(write_hits),
+        .write_misses(write_misses),
+        .eviction_count(eviction_count),
+        .perf_lookup_o(l2_perf_lookup),
+        .perf_memory_wait_o(l2_perf_memory_wait),
+        .perf_buffer_wait_o(l2_perf_buffer_wait)
+    );
+
+    l2_mem_bridge l2_mem_bridge_inst (
+        .clk(clk_i),
+        .rst(rst_i),
+
+        .mem_req_valid(mem_req_valid),
+        .mem_req_ready(mem_req_ready),
+        .mem_req_write(mem_req_write),
+        .mem_req_addr(mem_req_addr),
+        .mem_req_wdata(mem_req_wdata),
+        .mem_resp_valid(mem_resp_valid),
+        .mem_resp_data(mem_resp_data),
+
+        .rd_req(rd_req),
+        .rd_addr(rd_addr),
+        .rd_data(rd_data),
+        .rd_done(rd_done),
+
+        .ev_push(ev_push),
+        .ev_addr(ev_addr),
+        .ev_line(ev_line),
+        .ev_full(ev_full)
+    );
+
+    wire mem_perf_accept;
+    wire mem_perf_write;
+    wire mem_perf_busy;
+    wire mem_perf_word;
+    wire mem_subsystem_idle;
+
+    mem_subsystem #(
+        .EV_DEPTH(MEM_EV_DEPTH),
+        .FIRST_LAT(MEM_FIRST_LAT),
+        .DATA_FILE(DATA_FILE)
+    ) mem_subsystem_inst (
+        .clk(clk_i),
+        .clk_mem(clk_mem_i),
+        .rst(rst_i),
+
+        .rd_req(rd_req),
+        .rd_addr(rd_addr),
+        .rd_data(rd_data),
+        .rd_done(rd_done),
+
+        .ev_push(ev_push),
+        .ev_addr(ev_addr),
+        .ev_line(ev_line),
+        .ev_full(ev_full),
+        .ev_empty(ev_empty),
+
+        .perf_mem_accept_o(mem_perf_accept),
+        .perf_mem_write_o(mem_perf_write),
+        .perf_mem_busy_o(mem_perf_busy),
+        .perf_mem_word_o(mem_perf_word),
+
+        .idle(mem_subsystem_idle),
+        .timeout_err()
+    );
+
+    // El flush termina cuando: (1) L2 y su eviction buffer ya no tienen
+    // nada pendiente (l2_flush_done), y (2) mem_subsystem tambien dreno
+    // su propio FIFO de eviccion y el arbitro volvio a IDLE. Sin esto,
+    // flush_done_o podria activarse mientras la ultima linea todavia
+    // esta cruzando el dominio de clk_mem hacia mem_controller.memory[].
+    assign flush_done_o = l2_flush_done && ev_empty && mem_subsystem_idle;
+
+    // Una direccion desalineada se rechaza localmente y no se envia
+    // a L1, evitando esperar una respuesta imposible.
+    assign ex_lsu_access_error =
+        (ex_lsu_mem_read || ex_lsu_mem_write) && !ex_lsu_addr_aligned;
+
+    // En el ciclo en que cache_resp_ready se activa, cache_resp_stall debe
+    // estar desactivado y EX/WB puede capturar el dato. cache_resp_ready
+    // proviene de l1_data_system.
+    assign ex_lsu_read_data =
+        cache_resp_ready ? cache_resp_read_data : 32'b0;
 
 
     bru bru_inst (
@@ -898,29 +1112,23 @@ module top #(
         .branch_target_o(ex_bru_branch_target)
     );
 
-    // El salto solo redirige el PC si el slot BRU es valido y el
-    // bundle no fue invalidado por un flush anterior.
-    assign ex_branch_taken =
-        ex_bru_branch_taken & ex_bru_valid & rr_ex_valid_out;
-
+    // El salto solo redirige el PC si el slot BRU es valido y el  bundle no fue invalidado por un flush anterior.
+    assign ex_branch_taken = ex_bru_branch_taken & ex_bru_valid & rr_ex_valid_out;
 
     // ---------------------------------------------------------
     // UNIDAD FEISTEL4
     // ---------------------------------------------------------
 
-    // La boveda cambia de estado (autorizacion y llaves) en el flanco
-    // de reloj de esta etapa, asi que sus enables deben filtrarse por
-    // la validez del bundle: un bundle descartado por un flush no
-    // puede autenticar ni escribir llaves.
-    assign ex_feist_active = ex_feist_valid & rr_ex_valid_out & ~stall_i;
+    // La boveda cambia de estado (autorizacion y llaves) en el flanco de reloj de esta etapa, asi que sus enables deben filtrarse por
+    // la validez del bundle: un bundle descartado por un flush no puede autenticar ni escribir llaves.
+    assign ex_feist_active = ex_feist_valid & rr_ex_valid_out & ~global_stall;
 
     assign ex_feist_auth_req   = ex_feist_auth_en   & ex_feist_active;
     assign ex_feist_logout_req = ex_feist_logout_en & ex_feist_active;
     assign ex_feist_kstore_req = ex_feist_kstore_en & ex_feist_active;
     assign ex_feist_fround_req = ex_feist_fround_en & ex_feist_active;
 
-    // Raiz de confianza: guarda las cuatro llaves de 128 bits y
-    // mantiene el estado de autenticacion. Su unico puerto de lectura
+    // Raiz de confianza: guarda las cuatro llaves de 128 bits y mantiene el estado de autenticacion. Su unico puerto de lectura
     // va directo a crypto_unit, nunca al register file.
     key_vault key_vault_inst (
         .clk(clk_i),
@@ -950,7 +1158,6 @@ module top #(
         .subkey_valid(ex_vault_subkey_valid)
     );
 
-
     crypto_unit crypto_unit_inst (
         .fround_en(ex_feist_fround_req),
         .mode_decrypt(ex_feist_mode),
@@ -970,13 +1177,15 @@ module top #(
         .access_error(ex_feist_access_error)
     );
 
-
     // ---------------------------------------------------------
     // REGISTRO EX/WB
     // ---------------------------------------------------------
-
     assign ex_wb_data_in = {
         ex_pc,
+
+        // Actividad del bundle. Se propaga hasta WB para contar
+        // instrucciones retiradas, incluso STORE, BRU y FEIST sin writeback.
+        ex_feist_valid, ex_bru_valid, ex_lsu_valid, ex_alu_valid,
 
         // ALU
         ex_alu_result, ex_alu_rd,
@@ -1009,6 +1218,7 @@ module top #(
 
     assign {
         wb_pc,
+        wb_retire_slots,
 
         wb_alu_result, wb_alu_rd,
         wb_alu_write_enable,
@@ -1021,52 +1231,107 @@ module top #(
         wb_feist_write_enable
     } = ex_wb_data_out;
 
-
     // =========================================================
     // ETAPA WB: ESCRITURA AL REGISTER FILE
     // =========================================================
 
-    // x1 es el PC y no vive en el register file. Una escritura a x1
-    // se desvia hacia pipeline_control, que redirige el PC y descarta
-    // los bundles mas jovenes. El compilador garantiza que a lo sumo
-    // un slot escribe x1 por bundle.
-    assign wb_alu_writes_pc = wb_alu_write_enable & ex_wb_valid_out &
-                              (wb_alu_rd == PC_REG);
-    assign wb_lsu_writes_pc = wb_lsu_write_enable & ex_wb_valid_out &
-                              (wb_lsu_rd == PC_REG);
+    // x1 es el PC y no vive en el register file. Una escritura a x1 se desvia hacia pipeline_control, que redirige el PC y descarta
+    // los bundles mas jovenes. El compilador garantiza que a lo sumo un slot escribe x1 por bundle.
+    assign wb_alu_writes_pc = wb_alu_write_enable & ex_wb_valid_out & (wb_alu_rd == PC_REG);
+    assign wb_lsu_writes_pc = wb_lsu_write_enable & ex_wb_valid_out & (wb_lsu_rd == PC_REG);
 
-    assign wb_pc_write      = wb_alu_writes_pc | wb_lsu_writes_pc;
+    assign wb_pc_write = wb_alu_writes_pc | wb_lsu_writes_pc;
     assign wb_pc_write_data = wb_alu_writes_pc ? wb_alu_result : wb_lsu_data;
 
     // Puerto de escritura 0: resultado del ALU.
     assign regfile_wr_addr[0] = wb_alu_rd;
     assign regfile_wr_data[0] = wb_alu_result;
-    assign regfile_wr_en[0]   = wb_alu_write_enable & ex_wb_valid_out &
-                                ~wb_alu_writes_pc;
+
+    assign regfile_wr_en[0]   = wb_alu_write_enable & ex_wb_valid_out & ~wb_alu_writes_pc & ~global_stall;
+
 
     // Puerto de escritura 1: dato leido por el LSU.
     assign regfile_wr_addr[1] = wb_lsu_rd;
     assign regfile_wr_data[1] = wb_lsu_data;
-    assign regfile_wr_en[1]   = wb_lsu_write_enable & ex_wb_valid_out &
-                                ~wb_lsu_writes_pc;
+    assign regfile_wr_en[1]   = wb_lsu_write_enable & ex_wb_valid_out & ~wb_lsu_writes_pc & ~global_stall;
 
-    // Puertos de escritura 2 y 3: las dos mitades que produce una
-    // ronda Feistel. Nunca transportan material de llave: solo las
-    // salidas de crypto_unit, jamas el contenido de la boveda.
-    //
-    // Una ronda Feistel no puede escribir x1: redirigir el PC con el
-    // resultado de un cifrado no tiene sentido y el camino de
-    // escritura al PC solo admite un slot por bundle.
+    // Puertos de escritura 2 y 3: las dos mitades que produce una ronda Feistel. Nunca transportan material de llave: solo las
+    // salidas de crypto_unit, jamas el contenido de la boveda. Una ronda Feistel no puede escribir x1: redirigir el PC con el
+    // resultado de un cifrado no tiene sentido y el camino de escritura al PC solo admite un slot por bundle.
     assign regfile_wr_addr[2] = wb_feist_rdL;
     assign regfile_wr_data[2] = wb_feist_l;
-    assign regfile_wr_en[2]   = wb_feist_write_enable & ex_wb_valid_out &
-                                (wb_feist_rdL != PC_REG);
+    assign regfile_wr_en[2]   = wb_feist_write_enable & ex_wb_valid_out & (wb_feist_rdL != PC_REG) & ~global_stall;
 
     assign regfile_wr_addr[3] = wb_feist_rdR;
     assign regfile_wr_data[3] = wb_feist_r;
-    assign regfile_wr_en[3]   = wb_feist_write_enable & ex_wb_valid_out &
-                                (wb_feist_rdR != PC_REG);
+    assign regfile_wr_en[3]   = wb_feist_write_enable & ex_wb_valid_out & (wb_feist_rdR != PC_REG) & ~global_stall;
 
+    // =========================================================
+    // CONTADORES DE RENDIMIENTO DEL PIPELINE
+    // =========================================================
+
+    // En esta integracion se conectan los tres contadores basicos que
+    // corresponden al pipeline: ciclos, bundles e instrucciones retiradas.
+    // Las metricas detalladas de L1/L2/memoria se conectaran en el nivel
+    // de integracion de la jerarquia de memoria.
+
+    // Ciclos de recuperacion del pipeline despues de un salto.
+    logic [2:0] branch_penalty_left;
+
+    always_ff @(posedge clk_i or posedge rst_i) begin
+        if (rst_i) begin
+            branch_penalty_left <= 3'd0;
+        end else if (!global_stall) begin
+            if (wb_pc_write)
+                branch_penalty_left <= 3'd4;
+            else if (ex_branch_taken)
+                branch_penalty_left <= 3'd3;
+            else if (branch_penalty_left != 3'd0)
+                branch_penalty_left <= branch_penalty_left - 3'd1;
+        end
+    end
+
+    performance_counters performance_counters_inst (
+        .clk_i(clk_i),
+        .rst_i(rst_i),
+        .measure_i(1'b1),
+
+        .retire_valid_i(ex_wb_valid_out),
+        .retire_slots_i(wb_retire_slots),
+        .pipeline_stall_i(global_stall),
+        .cache_stall_i(cache_stall),
+        .branch_stall_i(branch_penalty_left != 3'd0),
+        .stall_l2_lookup_i(l2_perf_lookup),
+        .stall_memory_i(l2_perf_memory_wait),
+        .stall_buffer_i(l2_perf_buffer_wait),
+
+        .l1_access_i(l1_perf_access),
+        .l1_write_i(l1_perf_write),
+        .l1_hit_i(l1_perf_hit),
+
+        .mem_accept_i(mem_perf_accept),
+        .mem_write_i(mem_perf_write),
+        .mem_busy_i(mem_perf_busy),
+        .mem_word_i(mem_perf_word),
+
+        .cycles_o(perf_cycles_o),
+        .bundles_o(perf_bundles_o),
+        .instructions_o(perf_instructions_o),
+
+        .cache_stall_cycles_o(perf_cache_stall_cycles_o),
+        .branch_stall_cycles_o(perf_branch_stall_cycles_o),
+        .l2_lookup_stall_cycles_o(perf_l2_lookup_stall_cycles_o),
+        .memory_stall_cycles_o(perf_memory_stall_cycles_o),
+        .buffer_stall_cycles_o(perf_buffer_stall_cycles_o),
+        .l1_read_hits_o(perf_l1_read_hits_o),
+        .l1_read_misses_o(perf_l1_read_misses_o),
+        .l1_write_hits_o(perf_l1_write_hits_o),
+        .l1_write_misses_o(perf_l1_write_misses_o),
+        .mem_reads_o(perf_mem_reads_o),
+        .mem_writes_o(perf_mem_writes_o),
+        .mem_busy_cycles_o(perf_mem_busy_cycles_o),
+        .mem_words_o(perf_mem_words_o)
+    );
 
     // =========================================================
     // SALIDAS DE OBSERVACION
@@ -1089,5 +1354,4 @@ module top #(
     assign valid_feist_o = id_valid_feist;
 
     assign dispatch_valid_o = id_valid;
-
 endmodule
