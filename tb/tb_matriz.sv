@@ -4,9 +4,11 @@
 // No modifica ningun modulo del procesador ni genera un VCD gigante.
 module tb_matriz;
     logic clk = 0;
+    logic clk_mem = 0;
     logic rst = 1;
     logic [31:0] pc;
     integer ciclos;
+    integer drenaje;
     integer limite;
     integer detenido;
     integer direccion_fin;
@@ -22,27 +24,63 @@ module tb_matriz;
         .DATA_FILE("")
     ) dut (
         .clk_i(clk),
+        .clk_mem_i(clk_mem),
         .rst_i(rst),
         .stall_i(1'b0),
         .pc_o(pc)
     );
 
     always #5 clk = ~clk;
+    always #20 clk_mem = ~clk_mem;
 
-    // Lectura little-endian de una palabra (4 bytes) de la RAM real.
+
+    // Lectura del valor visible en la jerarquia de memoria:
+    // primero L1, despues L2 y finalmente RAM.
     function automatic [31:0] leer32(input integer direccion);
+        integer conjunto1, conjunto2, palabra, via;
+        reg encontrado;
+        reg [31:0] valor;
         begin
-            leer32 = {
-                dut.data_memory_inst.memory[direccion+3],
-                dut.data_memory_inst.memory[direccion+2],
-                dut.data_memory_inst.memory[direccion+1],
-                dut.data_memory_inst.memory[direccion]
-            };
+            conjunto1 = (direccion >> 5) & 63;
+            conjunto2 = (direccion >> 5) & 127;
+            palabra = (direccion >> 2) & 7;
+            encontrado = 0;
+            valor = 0;
+
+            for (via = 0; via < 2; via = via + 1) begin
+                if (!encontrado &&
+                    dut.l1_data_system_inst.cache.valid_array[via][conjunto1] === 1'b1 &&
+                    dut.l1_data_system_inst.cache.tag_array[via][conjunto1] === (direccion >> 11)) begin
+                    valor = dut.l1_data_system_inst.cache.data_array[via][conjunto1][palabra*32 +: 32];
+                    encontrado = 1;
+                end
+            end
+
+            if (!encontrado) begin
+                for (via = 0; via < 4; via = via + 1) begin
+                    if (!encontrado &&
+                        dut.l2_data_system_inst.controller.cache_inst.valid_array[conjunto2][via] === 1'b1 &&
+                        dut.l2_data_system_inst.controller.cache_inst.tag_array[conjunto2][via] === (direccion >> 12)) begin
+                        valor = dut.l2_data_system_inst.controller.cache_inst.data_array[conjunto2][via][palabra*32 +: 32];
+                        encontrado = 1;
+                    end
+                end
+            end
+
+            if (!encontrado)
+                valor = {
+                    dut.mem_subsystem_inst.u_ctrl.memory[direccion+3],
+                    dut.mem_subsystem_inst.u_ctrl.memory[direccion+2],
+                    dut.mem_subsystem_inst.u_ctrl.memory[direccion+1],
+                    dut.mem_subsystem_inst.u_ctrl.memory[direccion]
+                };
+
+            leer32 = valor;
         end
     endfunction
 
     initial begin
-        limite = 2000000;
+        limite = 800000;
         if ($value$plusargs("MAX_CICLOS=%d", limite)) begin end
         ciclos = 0;
         detenido = 0;
@@ -57,7 +95,14 @@ module tb_matriz;
         while (ciclos < limite && !detenido) begin
             @(negedge clk);
             ciclos = ciclos + 1;
-            if (dut.ex_branch_taken === 1'b1 &&
+            if (ciclos % 50000 == 0) begin
+                $display("PROGRESO: ciclos=%0d PC=%08h", ciclos, pc);
+                $fflush();
+            end
+            if ((dut.ex_pc == 32'h0000fad0 ||
+                 dut.ex_pc == 32'h0000fae0) &&
+                dut.ex_branch_taken === 1'b1 &&
+                !dut.global_stall_o &&
                 dut.ex_bru_branch_target === dut.ex_pc) begin
                 detenido = 1;
                 direccion_fin = dut.ex_pc;
@@ -70,6 +115,19 @@ module tb_matriz;
         end
 
         // Dejar que terminen las operaciones que ya estaban en el pipeline.
+        // Esperar las escrituras pendientes antes de verificar.
+        drenaje = 0;
+        while ((!dut.l1_data_system_inst.buffer_empty ||
+                dut.l2_data_system_inst.controller.state != 0 ||
+                dut.l2_data_system_inst.mem_state != 0) &&
+                drenaje < 10000) begin
+            @(negedge clk);
+            drenaje = drenaje + 1;
+        end
+
+        if (drenaje >= 10000)
+            $fatal(1, "Escrituras pendientes sin completar");
+
         repeat (8) @(negedge clk);
         $display("FIN: ciclos=%0d, salto final PC=0x%08h", ciclos, direccion_fin);
 
@@ -158,7 +216,7 @@ module tb_matriz;
             leer32(32'h0644) !== 32'd1)
             $fatal(1, "FAIL: diferencias en memoria; ver errores anteriores");
 
-        $display("PASS: matrices 10x10 correctas y verificadas desde RAM");
+        $display("PASS: matrices 10x10 correctas en la jerarquia L1/L2/RAM");
         $finish;
     end
 endmodule
