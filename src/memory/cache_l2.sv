@@ -25,7 +25,20 @@ module cache_l2 (
     output logic         victim_valid,
     output logic         victim_dirty,
     output logic [31:0]  victim_addr,
-    output logic [255:0] victim_data
+    output logic [255:0] victim_data,
+
+    // Acceso directo por set/via, usado por el flush al terminar el
+    // programa: recorre toda la cache sin pasar por una direccion.
+    input  logic [6:0]   scan_set_i,
+    input  logic [1:0]   scan_way_i,
+    output logic         scan_valid_o,
+    output logic         scan_dirty_o,
+    output logic [31:0]  scan_addr_o,
+    output logic [255:0] scan_data_o,
+
+    // Limpia el dirty bit de la linea apuntada por scan_set_i/scan_way_i
+    // una vez que el flush la entrego al eviction buffer.
+    input  logic         scan_clear_dirty_i
 );
     localparam integer NUM_SETS = 128;
     localparam integer NUM_WAYS = 4;
@@ -98,6 +111,13 @@ module cache_l2 (
         victim_data  = data_array[fill_set][candidate_way];
     end
 
+    always_comb begin
+        scan_valid_o = valid_array[scan_set_i][scan_way_i];
+        scan_dirty_o = scan_valid_o && dirty_array[scan_set_i][scan_way_i];
+        scan_addr_o  = {tag_array[scan_set_i][scan_way_i], scan_set_i, 5'b0};
+        scan_data_o  = data_array[scan_set_i][scan_way_i];
+    end
+
     always_ff @(posedge clk or posedge rst) begin
         if (rst) begin
             lfsr <= 16'hACE1;
@@ -124,6 +144,8 @@ module cache_l2 (
                 data_array[write_set][write_way][write_addr[4:2]*32 +: 32]
                     <= write_data;
                 dirty_array[write_set][write_way] <= 1'b1;
+            end else if (scan_clear_dirty_i) begin
+                dirty_array[scan_set_i][scan_way_i] <= 1'b0;
             end
         end
     end

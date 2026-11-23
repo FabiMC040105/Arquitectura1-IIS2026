@@ -30,6 +30,14 @@ module l2_controller (
     output logic [31:0]  evict_addr,
     output logic [255:0] evict_data,
 
+    // Flush total al terminar el programa: recorre todos los sets/vias
+    // y evicta cada linea dirty. flush_done se activa un ciclo cuando
+    // el recorrido completo termina y la ultima linea ya fue aceptada
+    // por el eviction buffer (no implica que ya este en memoria: eso
+    // lo indica el buffer al vaciarse).
+    input  logic         flush_i,
+    output logic         flush_done_o,
+
     // Contadores, sin modificar el ISA.
     output logic [31:0] read_hits,
     output logic [31:0] read_misses,
@@ -42,7 +50,8 @@ module l2_controller (
     typedef enum logic [3:0] {
         IDLE, CHECK, L2_WAIT, HIT_RESPONSE, HIT_WRITE,
         MISS_PREPARE, EVICT, MEM_REQUEST, MEM_WAIT,
-        FILL, POST_FILL_READ, POST_FILL_WRITE
+        FILL, POST_FILL_READ, POST_FILL_WRITE,
+        FLUSH_SCAN, FLUSH_EVICT
     } state_t;
 
     state_t state;
@@ -56,7 +65,7 @@ module l2_controller (
     assign perf_memory_wait_o = (state == MEM_WAIT);
 
     assign perf_eviction_wait_o =
-        (state == EVICT) && !evict_ready;
+        ((state == EVICT) || (state == FLUSH_EVICT)) && !evict_ready;
     logic         pending_write;
     logic [31:0]  pending_addr;
     logic [31:0]  pending_data;
@@ -80,6 +89,16 @@ module l2_controller (
     logic [31:0]  locked_victim_addr;
     logic [255:0] locked_victim_data;
 
+    // Recorrido del flush: set/via actuales y resultado de la consulta
+    // directa a cache_l2 para esa linea.
+    logic [6:0]   scan_set;
+    logic [1:0]   scan_way;
+    logic         scan_valid;
+    logic         scan_dirty;
+    logic [31:0]  scan_addr;
+    logic [255:0] scan_data;
+    logic         scan_clear_dirty;
+
     cache_l2 cache_inst (
         .clk(clk), .rst(rst),
         .lookup_addr(pending_addr),
@@ -96,24 +115,35 @@ module l2_controller (
         .victim_valid(victim_valid),
         .victim_dirty(victim_dirty),
         .victim_addr(victim_addr),
-        .victim_data(victim_data)
+        .victim_data(victim_data),
+        .scan_set_i(scan_set),
+        .scan_way_i(scan_way),
+        .scan_valid_o(scan_valid),
+        .scan_dirty_o(scan_dirty),
+        .scan_addr_o(scan_addr),
+        .scan_data_o(scan_data),
+        .scan_clear_dirty_i(scan_clear_dirty)
     );
 
     assign cache_write = (state == HIT_WRITE) || (state == POST_FILL_WRITE);
     assign cache_fill = (state == FILL);
 
-    // Prioridad a lecturas de L1 cuando ambas solicitudes llegan juntas.
-    assign l2_req_ready = !rst && (state == IDLE);
-    assign l2_write_ready = !rst && (state == IDLE) && !l2_req_valid;
+    // Mientras se hace flush no se aceptan nuevas solicitudes de L1.
+    assign l2_req_ready = !rst && (state == IDLE) && !flush_i;
+    assign l2_write_ready = !rst && (state == IDLE) && !flush_i && !l2_req_valid;
 
     assign mem_req_valid = (state == MEM_REQUEST);
     assign mem_req_addr = {pending_addr[31:5], 5'b0};
 
     // No usar las salidas combinacionales de cache_l2 mientras
     // el eviction buffer esta esperando espacio: estan congeladas.
-    assign evict_valid = (state == EVICT);
-    assign evict_addr = locked_victim_addr;
-    assign evict_data = locked_victim_data;
+    assign evict_valid = (state == EVICT) || (state == FLUSH_EVICT);
+    assign evict_addr = (state == FLUSH_EVICT) ? scan_addr : locked_victim_addr;
+    assign evict_data = (state == FLUSH_EVICT) ? scan_data : locked_victim_data;
+
+    // Limpia el dirty bit de la linea actual del recorrido justo cuando
+    // el eviction buffer la acepta.
+    assign scan_clear_dirty = (state == FLUSH_EVICT) && evict_ready;
 
     always @(posedge clk or posedge rst) begin
         if (rst) begin
@@ -133,11 +163,19 @@ module l2_controller (
             read_misses <= 32'b0;
             write_hits <= 32'b0;
             write_misses <= 32'b0;
+            scan_set <= 7'b0;
+            scan_way <= 2'b0;
+            flush_done_o <= 1'b0;
         end else begin
             l2_resp_valid <= 1'b0;
+            flush_done_o <= 1'b0;
             case (state)
                 IDLE: begin
-                    if (l2_req_valid && l2_req_ready) begin
+                    if (flush_i && !l2_req_valid && !l2_write_valid) begin
+                        scan_set <= 7'b0;
+                        scan_way <= 2'b0;
+                        state <= FLUSH_SCAN;
+                    end else if (l2_req_valid && l2_req_ready) begin
                         pending_write <= 1'b0;
                         pending_addr <= l2_req_addr;
                         pending_data <= 32'b0;
@@ -147,6 +185,43 @@ module l2_controller (
                         pending_addr <= l2_write_addr;
                         pending_data <= l2_write_data;
                         state <= CHECK;
+                    end
+                end
+                FLUSH_SCAN: begin
+                    if (scan_valid && scan_dirty) begin
+                        state <= FLUSH_EVICT;
+                    end else begin
+                        // Siguiente via; al agotar las 4 vias, siguiente set.
+                        if (scan_way == 2'd3) begin
+                            scan_way <= 2'd0;
+                            if (scan_set == 7'd127) begin
+                                flush_done_o <= 1'b1;
+                                state <= IDLE;
+                            end else begin
+                                scan_set <= scan_set + 7'd1;
+                            end
+                        end else begin
+                            scan_way <= scan_way + 2'd1;
+                        end
+                    end
+                end
+                FLUSH_EVICT: begin
+                    // No avanzar hasta que el eviction buffer acepte la
+                    // linea dirty actual (scan_clear_dirty ya la limpia).
+                    if (evict_ready) begin
+                        if (scan_way == 2'd3) begin
+                            scan_way <= 2'd0;
+                            if (scan_set == 7'd127) begin
+                                flush_done_o <= 1'b1;
+                                state <= IDLE;
+                            end else begin
+                                scan_set <= scan_set + 7'd1;
+                                state <= FLUSH_SCAN;
+                            end
+                        end else begin
+                            scan_way <= scan_way + 2'd1;
+                            state <= FLUSH_SCAN;
+                        end
                     end
                 end
                 CHECK: begin
