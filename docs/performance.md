@@ -112,15 +112,31 @@ Los resultados se exportaron a CSV y se analizaron
 con python/analyze_performance.py, generando tablas
 y graficas SVG.
 
-### Prueba pendiente de matriz
+### Validacion del programa matriz
 
-El programa pruebas-compilador/matriz.mem contiene
-4015 bundles y dos instrucciones JMP 0 al final.
-Sin embargo, no alcanzo el punto de terminacion durante
-las pruebas de hasta 60000 ciclos.
+Se ejecuto pruebas-compilador/matriz.mem sobre el procesador
+completo con CPU, L1, L2 y RAM.
 
-Este caso queda pendiente de investigacion y no se
-incluye como un benchmark completado.
+El programa contiene 4015 bundles y finaliza mediante un
+salto JMP 0. Por eso se utilizo un testbench que detecta
+ese salto en lugar de esperar 40 bundles NOP consecutivos.
+
+Resultados obtenidos:
+
+- Ciclos: 539896
+- PC del salto final: 0x0000FAD0
+- Matriz: 10x10
+- resultado[0][0]: 21
+- Indicador errores: 0
+- Indicador prueba_correcta: 1
+- Validacion de los elementos de las matrices: PASS
+
+La verificacion consulta los valores visibles en la
+jerarquia L1/L2/RAM, considerando las escrituras que
+todavia pueden permanecer en cache.
+
+El resultado demuestra la ejecucion funcional del programa
+matriz en la arquitectura integrada.
 
 ## Benchmarks con contadores de hardware
 
