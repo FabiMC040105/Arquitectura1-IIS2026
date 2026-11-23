@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="237" viewBox="0 0 1000 237">
+<rect width="100%" height="100%" fill="#ffffff"/>
+<text x="24" y="32" font-size="20" font-family="sans-serif" fill="#172b4d">Hit rate L1</text>
+<text x="24" y="54" font-size="13" font-family="sans-serif" fill="#526174">Unidad: fraccion</text>
+<text x="24" y="93" font-family="sans-serif" font-size="13">sequential / l1_l2_ram</text>
+<rect x="330" y="75" width="530.00" height="25" rx="3" fill="#2563a6"/>
+<text x="868.00" y="93" font-family="sans-serif" font-size="13">0.9375</text>
+<text x="24" y="137" font-family="sans-serif" font-size="13">random / l1_l2_ram</text>
+<rect x="330" y="119" width="251.75" height="25" rx="3" fill="#7554a3"/>
+<text x="589.75" y="137" font-family="sans-serif" font-size="13">0.4453</text>
+<text x="24" y="181" font-family="sans-serif" font-size="13">stride / l1_l2_ram</text>
+<rect x="330" y="163" width="0.00" height="25" rx="3" fill="#23816f"/>
+<text x="338.00" y="181" font-family="sans-serif" font-size="13">0.0000</text>
+</svg>

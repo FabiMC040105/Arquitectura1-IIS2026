@@ -29,7 +29,8 @@ module mem_controller #(
 
     output logic         done,
     output logic [255:0] rline,
-    output logic         access_error
+    output logic         access_error,
+    output logic         perf_word_xfer_o
 );
     logic [7:0] memory [0:MEM_BYTES-1];
 
@@ -61,6 +62,8 @@ module mem_controller #(
     // A word is transferred on the last FIRST cycle (word 0) and on every BURST cycle.
     wire       xfer = ((state == S_FIRST) && (cnt == FIRST_LAT-1)) || (state == S_BURST);
     wire [2:0] k    = (state == S_FIRST) ? 3'd0 : beat;
+
+    assign perf_word_xfer_o = xfer && !access_error;
 
     // Data path
     always_ff @(posedge clk_mem) begin

@@ -28,7 +28,10 @@ module l2_data_system (
     output logic [31:0]  read_misses,
     output logic [31:0]  write_hits,
     output logic [31:0]  write_misses,
-    output logic [3:0]   eviction_count
+    output logic [3:0]   eviction_count,
+    output logic perf_lookup_o,
+    output logic perf_memory_wait_o,
+    output logic perf_buffer_wait_o
 );
     logic         fill_req_valid, fill_req_ready;
     logic [31:0]  fill_req_addr;
@@ -43,6 +46,10 @@ module l2_data_system (
     logic [255:0] wb_data;
     logic         raw_conflict;
     logic         fifo_full, fifo_empty;
+    wire          perf_eviction_wait;
+
+    assign perf_buffer_wait_o =
+        perf_eviction_wait || (fill_req_valid && raw_conflict);
 
     l2_controller controller (
         .clk(clk), .rst(rst),
@@ -67,7 +74,10 @@ module l2_data_system (
         .read_hits(read_hits),
         .read_misses(read_misses),
         .write_hits(write_hits),
-        .write_misses(write_misses)
+        .write_misses(write_misses),
+        .perf_lookup_o(perf_lookup_o),
+        .perf_memory_wait_o(perf_memory_wait_o),
+        .perf_eviction_wait_o(perf_eviction_wait)
     );
 
     // Estrategia RAW: stall. Si un refill apunta a una linea que esta

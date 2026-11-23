@@ -34,7 +34,10 @@ module l2_controller (
     output logic [31:0] read_hits,
     output logic [31:0] read_misses,
     output logic [31:0] write_hits,
-    output logic [31:0] write_misses
+    output logic [31:0] write_misses,
+    output logic perf_lookup_o,
+    output logic perf_memory_wait_o,
+    output logic perf_eviction_wait_o
 );
     typedef enum logic [3:0] {
         IDLE, CHECK, L2_WAIT, HIT_RESPONSE, HIT_WRITE,
@@ -43,6 +46,17 @@ module l2_controller (
     } state_t;
 
     state_t state;
+
+    assign perf_lookup_o =
+        (state == CHECK) ||
+        (state == L2_WAIT) ||
+        (state == HIT_RESPONSE) ||
+        (state == HIT_WRITE);
+
+    assign perf_memory_wait_o = (state == MEM_WAIT);
+
+    assign perf_eviction_wait_o =
+        (state == EVICT) && !evict_ready;
     logic         pending_write;
     logic [31:0]  pending_addr;
     logic [31:0]  pending_data;

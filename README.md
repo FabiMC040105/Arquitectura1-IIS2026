@@ -310,4 +310,15 @@ Consultar el archivo [LICENSE](LICENSE) del repositorio.
 Se añadieron los módulos y testbenches de L2 junto a la implementación de L1.
 Consulta [`docs/integracion-l1-l2.md`](docs/integracion-l1-l2.md) y ejecuta
 `bash scripts/run_l2_tests.sh` para compilar y simular la batería de pruebas.
-La RAM de las pruebas es simulada; falta integración con el controlador de memoria principal y con el `top` del procesador.
+La jerarquía L1, L2 y RAM simulada está integrada con el procesador en src/top.sv. La integración se verifica con scripts/run_l2_tests.sh.
+
+
+## Benchmarks finales de memoria
+
+Se verificaron tres patrones de acceso: sequential, random y stride, con 512 lecturas cada uno.
+
+Ejecutar: bash scripts/run_hardware_benchmarks.sh
+
+La metodología y los resultados están documentados en docs/performance.md.
+
+Los CSV y las gráficas se encuentran en docs/evidencias_rendimiento/.

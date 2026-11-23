@@ -34,6 +34,10 @@ module mem_subsystem #(
     output logic         ev_full,
     output logic         ev_empty,
 
+    output logic         perf_mem_accept_o,
+    output logic         perf_mem_write_o,
+    output logic         perf_mem_busy_o,
+    output logic         perf_mem_word_o,
     output logic         idle,
     output logic         timeout_err
 );
@@ -71,8 +75,25 @@ module mem_subsystem #(
     logic         done_m, done_sync, req_sync;
     logic [255:0] rline_m;
     logic         access_error;
+    wire          word_xfer_mem;
+    logic         word_toggle_mem;
+    wire          word_toggle_cpu;
+    logic         word_toggle_cpu_prev;
 
     assign idle = (a_state == A_IDLE);
+
+    // Eventos de rendimiento, en reloj de CPU.
+    // Una transacción se registra cuando el árbitro
+    // comienza a atenderla, no al entrar en un FIFO.
+    assign perf_mem_accept_o =
+        (a_state == A_IDLE) &&
+        ((rd_req && !hazard) || !ev_empty);
+
+    assign perf_mem_write_o =
+        (a_state == A_IDLE) &&
+        !(rd_req && !hazard) && !ev_empty;
+
+    assign perf_mem_busy_o = (a_state == A_BUSY);
 
     wire do_push = ev_push && !ev_full;
     wire do_pop  = (a_state == A_BUSY) && done_sync && !is_rd;
@@ -167,6 +188,34 @@ module mem_subsystem #(
         .wline        (wline_c),
         .done         (done_m),
         .rline        (rline_m),
-        .access_error (access_error)
+        .access_error (access_error),
+        .perf_word_xfer_o (word_xfer_mem)
     );
+
+    // Cruce RAM -> CPU: un toggle por palabra transferida.
+    // Memoria opera entre 20 y 50 MHz, CPU a 100 MHz.
+    always_ff @(posedge clk_mem or posedge rst) begin
+        if (rst)
+            word_toggle_mem <= 1'b0;
+        else if (word_xfer_mem)
+            word_toggle_mem <= ~word_toggle_mem;
+    end
+
+    flop_sync perf_word_sync (
+        .clk_dst(clk),
+        .rst(rst),
+        .d(word_toggle_mem),
+        .q(word_toggle_cpu)
+    );
+
+    always_ff @(posedge clk or posedge rst) begin
+        if (rst)
+            word_toggle_cpu_prev <= 1'b0;
+        else
+            word_toggle_cpu_prev <= word_toggle_cpu;
+    end
+
+    assign perf_mem_word_o =
+        word_toggle_cpu ^ word_toggle_cpu_prev;
+
 endmodule
