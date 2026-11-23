@@ -1,9 +1,9 @@
 # Integración con Compiladores (CE1108) — Contrato ISA–Compilador
 
 **Curso:** CE-4301 Arquitectura de Computadores I  
-**Proyecto:** Proyecto Grupal I — Arquitectura VLIW propia para cifrado por bloques Feistel4  
+**Proyecto:** Contrato ISA–Compilador del procesador VLIW, vigente en el Proyecto Grupal II  
 **Documento:** `docs/compiler-integration.md`  
-**Estado:** Integración validada con programas generados por el compilador de CE1108.
+**Estado:** Contrato binario conservado para el Proyecto Grupal II; se dispone de pruebas con código del compilador de CE1108.
 
 ## 1. Propósito
 

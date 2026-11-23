@@ -1,324 +1,146 @@
-# Arquitectura1-IIS2026 — Proyecto Grupal I
+# Arquitectura de Computadores I — Proyecto Grupal II
 
-## Descripción del proyecto
+**Instituto Tecnológico de Costa Rica · CE4301 · II semestre de 2026**
 
-Proyecto desarrollado para el curso de **Arquitectura de Computadores I (CE4301)** del **Instituto Tecnológico de Costa Rica (TEC)**, correspondiente al segundo semestre de 2026.
+**Análisis de impacto de memoria caché y optimizaciones de compilador en un procesador VLIW propio**
 
-Consiste en el diseño e implementación de un procesador **VLIW (Very Long Instruction Word)** con una arquitectura de conjunto de instrucciones (ISA) propia, orientada a la ejecución de operaciones aritméticas, lógicas, de memoria, control de flujo y cifrado por bloques mediante el algoritmo Feistel4.
+El repositorio contiene el procesador VLIW de cuatro slots desarrollado para el Proyecto I, extendido en el Proyecto II con una jerarquía de memoria de datos L1-D/L2, buffers de escritura, RAM simulada en un dominio de reloj más lento y contadores de rendimiento. El diseño está implementado en SystemVerilog y se simula con Icarus Verilog. Incluye un ensamblador propio, pruebas de integración y benchmarks de memoria.
 
-El procesador está desarrollado en **SystemVerilog**, cuenta con un pipeline de cinco etapas y cuatro unidades funcionales que permiten ejecutar instrucciones independientes en paralelo.
+[**Leer informe final del Proyecto II**](docs/informe-final-proyecto2.md) · [**Índice de documentación técnica**](docs/README.md)
 
-El proyecto se integra con el compilador desarrollado para el curso de Compiladores e Intérpretes, permitiendo ejecutar programas generados para esta arquitectura.
+## Características
 
-## Características principales
-
-| Característica | Especificación |
-|---|---|
-| Arquitectura | VLIW de cuatro slots fijos |
-| Tamaño de instrucción VLIW | 128 bits |
-| Tamaño por slot | 32 bits |
-| Pipeline | Cinco etapas |
-| Unidades funcionales | ALU, LSU, BRU y FEIST |
+| Elemento | Implementación |
+|:---|:---|
+| ISA | VLIW de 128 bits, cuatro slots de 32 bits |
+| Unidades | ALU, LSU, BRU y FEIST con bóveda de llaves |
+| Pipeline | IF, ID, RR, EX, WB |
 | Registros | 16 registros de 32 bits |
-| Memoria de instrucciones | 64 KiB |
-| Memoria de datos | 64 KiB |
-| Bloque Feistel | 64 bits |
-| Llave Feistel | 128 bits |
-| Lenguaje de implementación | SystemVerilog |
+| ROM de instrucciones | 64 KiB, bundles completos |
+| L1-D | 4 KiB, dos vías, línea de 32 bytes, LRU |
+| Política L1 | Write-through / no-write-allocate; FIFO de 4 STORE |
+| L2 | 16 KiB, cuatro vías, línea de 32 bytes, LFSR |
+| Política L2 | Write-back / write-allocate; FIFO de 8 líneas sucias |
+| Inclusión | NINE (no inclusiva, no exclusiva) |
+| RAM de datos | 64 KiB, ráfaga de ocho palabras |
+| Relojes de benchmark | CPU a 100 MHz; RAM a 25 MHz |
+| Métricas | Ciclos, bundles, instrucciones, stalls, hits/misses y transferencias |
 
-## Arquitectura VLIW
+Los accesos de LSU detienen el bundle completo cuando la jerarquía necesita esperar. La calendarización entre bundles es estática y debe resolver las dependencias en el programa generado; el hardware no utiliza forwarding/scoreboarding general.
 
-Cada paquete de instrucciones (*bundle*) tiene un tamaño de 128 bits, dividido en cuatro slots de 32 bits.
-
-| Slot | Unidad | Función |
-|---|---|---|
-| 0 | ALU | Operaciones aritméticas y lógicas |
-| 1 | LSU | Operaciones de carga y almacenamiento |
-| 2 | BRU | Saltos y control de flujo |
-| 3 | FEIST | Autenticación, bóveda de llaves y operaciones criptográficas |
-
-Los slots no utilizados se rellenan con ceros (NOP). Los bits reservados de las instrucciones también se codifican con cero.
-
-El orden de los slots dentro del bundle es:
-
-`FEIST [127:96] | BRU [95:64] | LSU [63:32] | ALU [31:0]`
-
-El contador de programa avanza 16 bytes por paquete durante la ejecución secuencial.
-
-## Pipeline
-
-El procesador implementa un pipeline de cinco etapas:
-
-1. **IF (Instruction Fetch):** obtiene los paquetes desde la memoria de instrucciones.
-2. **ID (Instruction Decode):** decodifica las instrucciones de cada slot.
-3. **RR (Register Read):** realiza la lectura de operandos.
-4. **EX (Execute):** ejecuta las instrucciones en las unidades funcionales.
-5. **WB (Write Back):** escribe los resultados en el banco de registros.
-
-Se implementan mecanismos de control para detenciones (*stalls*) y vaciado (*flush*) del pipeline.
-
-La calendarización de instrucciones es estática. El compilador o ensamblador debe respetar las dependencias entre operaciones, ya que el procesador no realiza reordenamiento dinámico ni resolución automática de dependencias de datos.
-
-## Unidad criptográfica Feistel4
-
-La unidad FEIST permite realizar operaciones de cifrado y descifrado sobre bloques de 64 bits, divididos en dos mitades de 32 bits.
-
-Cada llave de 128 bits está formada por cuatro subllaves de 32 bits.
-
-Las instrucciones implementadas incluyen:
-
-- `AUTH`: autenticación para acceder a la bóveda de llaves.
-- `KSTORE`: almacenamiento de subllaves.
-- `FROUND`: ejecución de una ronda Feistel.
-- `LOGOUT`: finalización de la autorización.
-
-El cifrado utiliza cuatro rondas y el descifrado aplica las subllaves en orden inverso.
-
-La bóveda de llaves se implementa mediante `key_vault.sv`, mientras que las operaciones criptográficas son procesadas por `crypto_unit.sv`.
-
-Las credenciales utilizadas en el entorno de simulación tienen fines académicos y no representan un mecanismo de seguridad de producción.
-
-## Tecnologías utilizadas
-
-- SystemVerilog
-- Icarus Verilog
-- Python 3
-- GNU Make
-- GTKWave
-- Git y GitHub
-
-## Estructura del repositorio
+## Estructura
 
 ```text
-Arquitectura1-IIS2026/
+.
+├── README.md
 ├── Makefile
 ├── src/
 │   ├── top.sv
-│   ├── fetch.sv
-│   ├── dispatch.sv
-│   ├── instruction_memory.sv
-│   ├── register_file.sv
-│   ├── alu.sv
-│   ├── alu_decoder.sv
-│   ├── lsu.sv
-│   ├── lsu_decoder.sv
-│   ├── data_memory.sv
-│   ├── bru.sv
-│   ├── bru_decoder.sv
-│   ├── bru_conexion.sv
-│   ├── crypto_unit.sv
-│   ├── feist_decoder.sv
-│   ├── key_vault.sv
-│   ├── pipeline_reg.sv
-│   └── pipeline_control.sv
+│   ├── performance_counters.sv
+│   ├── pipeline/
+│   ├── functional-units/
+│   ├── memory/
+│   │   ├── cache_l1.sv
+│   │   ├── l1_data_system.sv
+│   │   ├── l1_write_buffer.sv
+│   │   ├── cache_l2.sv
+│   │   ├── l2_data_system.sv
+│   │   ├── l2_eviction_buffer.sv
+│   │   ├── l2_mem_bridge.sv
+│   │   ├── mem_subsystem.sv
+│   │   └── mem_controller.sv
 ├── tb/
-│   └── Testbenches del procesador
 ├── python/
-│   ├── assembler.py
-│   ├── generar_prueba.py
-│   ├── procesar_archivo_completo.py
-│   ├── load_file.py
-│   └── extract_data.py
-├── docs/
-│   ├── isa.md
-│   ├── microarchitecture.md
-│   ├── simulation.md
-│   └── compiler-integration.md
-├── pruebas/
-├── program_test.mem
-├── input.mem
-└── prueba_cifrado.asm
+├── scripts/
+├── benchmarks/
+├── pruebas-compilador/
+└── docs/
+    ├── README.md
+    ├── informe-final-proyecto2.md
+    ├── integracion-l1-l2.md
+    ├── microarchitecture.md
+    ├── performance.md
+    ├── simulation.md
+    ├── isa.md
+    ├── compiler-integration.md
+    ├── diagramas/
+    └── evidencias_rendimiento/
 ```
 
-## Instalación
+## Dependencias
 
-Se recomienda utilizar Ubuntu o WSL con Ubuntu.
-
-Instalar las dependencias:
+En Ubuntu o Ubuntu sobre WSL:
 
 ```bash
 sudo apt update
 sudo apt install -y iverilog make python3
 ```
 
-Para visualizar las señales de simulación:
+GTKWave es opcional para visualizar archivos VCD:
 
 ```bash
 sudo apt install -y gtkwave
 ```
 
-Clonar el repositorio:
+## Elaboración y ejecución
 
-```bash
-git clone https://github.com/FabiMC040105/Arquitectura1-IIS2026.git
-cd Arquitectura1-IIS2026
-```
-
-Mientras el proyecto no esté integrado en `main`, se puede acceder a la versión de desarrollo mediante:
-
-```bash
-git switch development
-```
-
-## Compilación y pruebas
-
-El proyecto dispone de un Makefile para automatizar la elaboración y ejecución de pruebas.
-
-Desde la raíz del repositorio:
+Comprobar los módulos y la instancia integrada:
 
 ```bash
 make check
-```
-
-Comprueba que los módulos del procesador puedan elaborarse.
-
-```bash
 make top
 ```
 
-Comprueba la elaboración del procesador integrado.
+Ejecutar las pruebas dirigidas L2 e integración L1/L2:
 
 ```bash
-make test
+bash scripts/run_l2_tests.sh
 ```
 
-Ejecuta las pruebas principales de Fetch, Dispatch, Top y Feistel.
-
-### Comandos del Makefile
-
-| Comando | Descripción |
-|---|---|
-| `make` | Ejecuta las pruebas principales |
-| `make check` | Comprueba los módulos |
-| `make top` | Elabora el procesador |
-| `make fetch` | Prueba Fetch |
-| `make dispatch` | Prueba Dispatch |
-| `make tb_top` | Prueba la integración del procesador |
-| `make feistel` | Prueba la unidad Feistel |
-| `make test` | Ejecuta las pruebas principales |
-| `make clean` | Elimina ejecutables de simulación |
-
-La carpeta `tb/` también incluye pruebas adicionales para las unidades funcionales, las memorias, el pipeline, los saltos y la ejecución paralela de instrucciones VLIW.
-
-## Ensamblador propio
-
-El proyecto incorpora un ensamblador independiente implementado en Python, capaz de traducir instrucciones de la ISA a código hexadecimal compatible con la memoria de instrucciones.
-
-Ejemplo de uso:
+Ejecutar los benchmarks de hardware completos, con generación, simulación y validación de resultados:
 
 ```bash
-python3 python/assembler.py prueba_cifrado.asm -o ejemplo.mem
+bash scripts/run_hardware_benchmarks.sh
 ```
 
-El archivo generado contiene un paquete de 128 bits por línea, representado mediante 32 dígitos hexadecimales.
-
-El contenido puede cargarse directamente en la memoria de instrucciones mediante `$readmemh`.
-
-## Cifrado y descifrado de archivos
-
-El proyecto incluye una herramienta que permite cifrar y descifrar archivos de diferentes formatos mediante la simulación del procesador VLIW.
-
-La herramienta prepara los datos y las instrucciones en Python, pero el procesamiento Feistel se ejecuta en el hardware simulado con SystemVerilog.
-
-Para probar el proceso completo:
+Las mediciones quedan bajo `build/benchmarks/`. Para procesar el CSV guardado en el repositorio y volver a generar tablas y gráficas:
 
 ```bash
-printf 'Hola TEC\n' > ejemplo.txt
-python3 python/procesar_archivo_completo.py ejemplo.txt
+python3 python/analyze_performance.py \
+  --hardware docs/evidencias_rendimiento/hardware.csv \
+  --out build/analisis-evidencia
 ```
 
-Para realizar solamente el cifrado:
+## Ensamblador y programas propios
+
+El ensamblador `python/assembler.py` traduce instrucciones de la ISA a líneas de 128 bits en hexadecimal, cargables mediante `$readmemh`. Cada línea representa un bundle con cuatro slots, completados con NOP cuando no se utilizan.
 
 ```bash
-python3 python/procesar_archivo_completo.py cifrar ejemplo.txt
+mkdir -p build
+python3 python/assembler.py prueba_cifrado.asm -o build/programa_ejemplo.mem
+make run PROGRAM=build/programa_ejemplo.mem DATA=input.mem
 ```
 
-Para descifrar:
+La herramienta `python/procesar_archivo_completo.py` prepara archivos de entrada para el cifrado/descifrado de demostración con la unidad Feistel4 de la arquitectura.
 
-```bash
-python3 python/procesar_archivo_completo.py descifrar ejemplo.txt.cifrado.bin
-```
+## Benchmarks de rendimiento
 
-El proceso permite:
+Los archivos en `docs/evidencias_rendimiento/` incluyen un CSV con las tres pruebas de lectura sobre la misma configuración `l1_l2_ram`:
 
-- Dividir los archivos en bloques de 8 bytes.
-- Preparar los datos para la memoria simulada.
-- Generar las instrucciones de cifrado o descifrado.
-- Ejecutar el procesamiento en el simulador.
-- Reconstruir los archivos recuperados.
-- Verificar la integridad mediante SHA-256.
-- Comparar el archivo original y el recuperado.
+| Patrón | Ciclos | IPC | Hit L1 de lectura |
+|:---|---:|---:|---:|
+| Secuencial | 2 867 | 0,1817 | 93,75 % |
+| Aleatorio | 13 848 | 0,0376 | 44,53 % |
+| Stride | 22 068 | 0,0236 | 0,00 % |
 
-El formato de salida cifrado utiliza un contenedor propio con extensión `.cifrado.bin`. Esta herramienta tiene fines demostrativos y no debe utilizarse para proteger información sensible.
+Cada programa registra 521 instrucciones retiradas y 512 LOAD. La explicación de la metodología, los contadores, el AMAT teórico y la interpretación de resultados se encuentra en [docs/performance.md](docs/performance.md).
 
-## Visualización de señales
+## Integración con Compiladores
 
-Algunos testbenches generan archivos `.vcd`, que pueden abrirse mediante GTKWave.
+El procesador recibe código conforme al contrato ISA–Compilador del curso CE1108. La prueba `tb/tb_matriz.sv` utiliza `pruebas-compilador/matriz.mem` y verifica las matrices 10×10 mediante lectura de los valores visibles en L1, L2 o RAM.
 
-Ejemplo:
+Documentos: [ISA](docs/isa.md) y [contrato de integración](docs/compiler-integration.md).
 
-```bash
-gtkwave nombre_de_la_traza.vcd
-```
+## Documentación de entrega
 
-Esto permite observar señales internas como el PC, instrucciones, registros, etapas del pipeline y resultados de las unidades funcionales, dependiendo del testbench utilizado.
-
-## Integración con Compiladores e Intérpretes
-
-El proyecto está relacionado con el compilador desarrollado para el curso de Compiladores e Intérpretes (CE1108).
-
-El compilador genera código compatible con la ISA del procesador, respetando:
-
-- Los cuatro slots fijos de 32 bits.
-- El formato VLIW de 128 bits.
-- La codificación de las instrucciones.
-- Las convenciones del banco de registros.
-- Las dependencias de datos y control.
-- La calendarización de instrucciones.
-- La inserción de NOP cuando corresponde.
-- La resolución de saltos y direcciones.
-
-Esta integración permite que programas escritos en el lenguaje del compilador se traduzcan a instrucciones ejecutables en la arquitectura simulada.
-
-Repositorio del compilador:
-
-[CompiladoresIIS2026](https://github.com/FabiMC040105/CompiladoresIIS2026)
-
-## Documentación técnica
-
-Para información detallada sobre los componentes y su funcionamiento, consultar:
-
-- [Especificación de la ISA](docs/isa.md)
-- [Microarquitectura y pipeline](docs/microarchitecture.md)
-- [Simulación y testbenches](docs/simulation.md)
-- [Integración con el compilador](docs/compiler-integration.md)
-
-## Licencia
-
-Consultar el archivo [LICENSE](LICENSE) del repositorio.
-
----
-
-**Instituto Tecnológico de Costa Rica (TEC)**
-
-**CE4301 — Arquitectura de Computadores I**
-
-**Proyecto Grupal I — II Semestre 2026**
-
-## Integración experimental L1 + L2
-
-Se añadieron los módulos y testbenches de L2 junto a la implementación de L1.
-Consulta [`docs/integracion-l1-l2.md`](docs/integracion-l1-l2.md) y ejecuta
-`bash scripts/run_l2_tests.sh` para compilar y simular la batería de pruebas.
-La jerarquía L1, L2 y RAM simulada está integrada con el procesador en src/top.sv. La integración se verifica con scripts/run_l2_tests.sh.
-
-
-## Benchmarks finales de memoria
-
-Se verificaron tres patrones de acceso: sequential, random y stride, con 512 lecturas cada uno.
-
-Ejecutar: bash scripts/run_hardware_benchmarks.sh
-
-La metodología y los resultados están documentados en docs/performance.md.
-
-Los CSV y las gráficas se encuentran en docs/evidencias_rendimiento/.
+La documentación del Proyecto II está íntegramente en `docs/` y contiene la arquitectura de la jerarquía, organización del pipeline, políticas y buffers, metodología, benchmarks y resultados. El informe unificado puede consultarse en [docs/informe-final-proyecto2.md](docs/informe-final-proyecto2.md).

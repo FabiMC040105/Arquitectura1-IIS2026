@@ -1,0 +1,22 @@
+digraph G {
+ graph [rankdir=TB, bgcolor="white", pad=0.22, nodesep=0.35, ranksep=0.50, splines=polyline, fontname="DejaVu Sans"];
+ node [shape=box, style="rounded,filled", fillcolor="#e9f0f9", color="#365776", penwidth=1.2, fontname="DejaVu Sans", fontsize=11, margin="0.16,0.12"];
+ edge [color="#4d728f", fontname="DejaVu Sans", fontsize=9, arrowsize=0.7, penwidth=1.15];
+ LSU [label="LSU | LOAD / STORE (32 bits)",fillcolor="#d9ecf5"];
+ L1 [label="L1-D | 4 KiB | 2 vías | 64 conjuntos\nLRU, write-through, no-write-allocate"];
+ W1 [label="Write buffer L1 → L2\nFIFO de 4 escrituras", fillcolor="#e8f5e9"];
+ L2 [label="L2 | 16 KiB | 4 vías | 128 conjuntos\nLFSR, write-back, write-allocate"];
+ W2 [label="Eviction buffer L2\nFIFO de 8 líneas sucias",fillcolor="#e8f5e9"];
+ BR [label="l2_mem_bridge\nArbitraje y protocolo"];
+ M [label="mem_subsystem\nFIFO de 8 líneas + CDC",fillcolor="#fff3db"];
+ RAM [label="RAM | 64 KiB\nBurst: 8 palabras; clk_mem",fillcolor="#fff3db"];
+ LSU -> L1 [label="acceso"];
+ L1 -> L2 [label="miss / refill", dir=both];
+ L1 -> W1 [label="STORE"];
+ W1 -> L2 [label="drenado"];
+ L2 -> BR [label="refill",dir=both];
+ L2 -> W2 [label="evicción dirty"];
+ W2 -> BR [label="drenado"];
+ BR -> M [dir=both];
+ M -> RAM [label="líneas de 32 bytes",dir=both];
+}

@@ -1,21 +1,30 @@
-# Documentación de diseño — Proyecto II (CE4301)
+# Documentación técnica — Proyecto Grupal II (CE4301)
 
-Esta carpeta cubre los tres bloques de documentación exigidos para la ampliación del VLIW: **jerarquía de memoria**, **organización/microarquitectura** y **análisis de rendimiento y validación**. Está elaborada a partir de la instantánea del repositorio entregada como `feature-integracion-metricas-final`; no representa un commit certificado de `main`.
+**Instituto Tecnológico de Costa Rica · Escuela de Ingeniería en Computadores · II semestre de 2026**
 
-| Documento | Qué contiene | Archivos fuente que lo sustentan |
-| --- | --- | --- |
-| [integracion-l1-l2.md](integracion-l1-l2.md) | Capacidades, organización por conjuntos, políticas L1/L2, buffers, RAW, inclusión NINE y diagrama | `src/memory/*.sv`, `src/top.sv` |
-| [microarchitecture.md](microarchitecture.md) | Pipeline VLIW, stalls de bundle, unidades, reloj de RAM y contadores; diagrama del sistema | `src/top.sv`, `src/pipeline/*.sv`, `src/performance_counters.sv` |
-| [performance.md](performance.md) | Método experimental, fórmulas, CSV, 3 benchmarks, gráficos y limitaciones | `tb/tb_benchmarks_hw.sv`, `python/analyze_performance.py`, `docs/evidencias_rendimiento/` |
-| [simulation.md](simulation.md) | Ambiente WSL, comandos de reproducción, testbenches y criterios de éxito | `Makefile`, `scripts/*.sh`, `tb/*.sv` |
-| [pendientes-proyecto2.md](pendientes-proyecto2.md) | Requisitos por validar y diferencias detectadas en el código/documentación | Enunciado del Proyecto II y repositorio |
-| [isa.md](isa.md) | Codificación ISA preservada desde el Proyecto I | `python/assembler.py`, decodificadores |
-| [compiler-integration.md](compiler-integration.md) | Contrato con CE1108; programas ensamblados y pruebas conjuntas | ISA y backend de integración |
+**Proyecto:** Análisis de impacto de memoria caché y optimizaciones de compilador en el procesador propio VLIW.
 
-## Evidencia disponible
+## Informe de entrega
 
-Los archivos `evidencias_rendimiento/hardware.csv` y `evidencias_rendimiento/*.svg` están incluidos en el repositorio. Se volvieron a **procesar y validar estructuralmente** las tres filas CSV mediante `python/analyze_performance.py` sin errores. No se infiere por ello que se hayan recompilado los testbenches en esta revisión.
+[**Informe final del Proyecto II**](informe-final-proyecto2.md): documento unificado que describe el diseño, la integración de componentes, las políticas de memoria, la metodología experimental, los resultados de rendimiento, la validación funcional y las conclusiones.
 
-## Criterio de actualización
+## Documentos técnicos
 
-Actualizar primero el código y sus pruebas; luego generar de nuevo los resultados experimentales; por último sincronizar las tablas de `performance.md`, los diagramas y los comandos de este README. No atribuir al simulador valores teóricos calculados por Python.
+| Documento | Contenido |
+|:---|:---|
+| [Microarquitectura](microarchitecture.md) | Pipeline, ISA VLIW, unidades, control de stalls y contadores. |
+| [Jerarquía de memoria](integracion-l1-l2.md) | L1-D, L2, políticas, buffers, RAM y coherencia de datos. |
+| [Rendimiento y validación](performance.md) | Metodología, métricas, tablas, gráficas e interpretación. |
+| [Simulación y pruebas](simulation.md) | Dependencias, comandos de ejecución, scripts y testbenches. |
+| [Especificación de ISA](isa.md) | Codificación y semántica de instrucciones heredadas del Proyecto I. |
+| [Contrato con Compiladores](compiler-integration.md) | Interfaz binaria, convenciones de registros y calendarización. |
+| [Trazabilidad de verificación](pendientes-proyecto2.md) | Relación de requisitos, módulos y evidencias del sistema. |
+
+## Figuras y resultados
+
+- [Arquitectura del procesador VLIW](diagramas/procesador_vliw.svg).
+- [Jerarquía L1-D/L2/RAM](diagramas/jerarquia_cache.svg).
+- [CSV de resultados de hardware](evidencias_rendimiento/hardware.csv).
+- [Gráficos de ciclos, IPC, hits, stalls y AMAT](performance.md#resultados-registrados).
+
+El conjunto de métricas corresponde a la configuración `l1_l2_ram` a 100 MHz de CPU y 25 MHz de memoria, para los patrones `sequential`, `random` y `stride`.

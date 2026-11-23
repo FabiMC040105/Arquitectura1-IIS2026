@@ -1,0 +1,23 @@
+digraph G {
+  graph [rankdir=LR, bgcolor="white", pad=0.23, nodesep=0.3, ranksep=0.6, splines=ortho, fontname="DejaVu Sans"];
+  node [shape=box, style="rounded,filled", fillcolor="#e9f0f9", color="#365776", penwidth=1.2, fontname="DejaVu Sans", fontsize=10, margin="0.14,0.11"];
+  edge [color="#52738e", penwidth=1.3, arrowsize=0.65, fontname="DejaVu Sans", fontsize=9];
+  ROM [label="ROM de instrucciones\n128 bits por bundle"];
+  IF [label="IF\nFetch"];
+  ID [label="ID\nDispatch"];
+  RR [label="RR\nBanco de registros"];
+  EX [label="EX\n4 unidades funcionales", fillcolor="#dbece8"];
+  WB [label="WB\nRetiro y escritura"];
+  ROM -> IF -> ID -> RR -> EX -> WB;
+  ALU [label="ALU", fillcolor="#eff6f0"];
+  LSU [label="LSU", fillcolor="#eff6f0"];
+  BRU [label="BRU", fillcolor="#eff6f0"];
+  FEIST [label="FEIST + bóveda", fillcolor="#eff6f0"];
+  EX -> ALU; EX -> LSU; EX -> BRU; EX -> FEIST;
+  CTRL [label="Control del pipeline\nPC, stall, flush", fillcolor="#fff5dc"];
+  PERF [label="Contadores\nciclos, IPC, stalls, cachés", fillcolor="#fff5dc"];
+  CTRL -> IF [style=dashed];
+  LSU -> PERF [style=dashed];
+  WB -> PERF [style=dashed];
+  BRU -> CTRL [style=dashed];
+}
