@@ -34,7 +34,14 @@ module top #(
     input logic rst_i,          // Reinicio del procesador
     input logic stall_i,        // Stall externo de prueba/control
 
-    output logic global_stall_o,
+    // Flush total de L2 (y, en cascada, del eviction buffer hacia
+    // mem_subsystem) hacia memoria principal. Pensado para usarse al
+    // detectar fin de programa, ya que L2 es write-back y no hay otro
+    // mecanismo que saque las lineas dirty sin esta senal.
+    input  logic flush_i,
+    output logic flush_done_o,
+
+    output logic        global_stall_o,
 
     // Contadores basicos de rendimiento del pipeline.
     output logic [63:0] perf_cycles_o,
@@ -893,7 +900,7 @@ module top #(
     assign cache_req_write_data = ex_lsu_mem_write_data;
 
     // ---------------------------------------------------------
-    // JERARQUIA DE MEMORIA: L1 -> L2 -> MEM_SUBSYSTEM
+    // JERARQUIA DE MEMORIA
     // ---------------------------------------------------------
     wire        l2_req_valid, l2_req_ready;
     wire [31:0] l2_req_addr;
@@ -971,9 +978,15 @@ module top #(
     wire l2_perf_memory_wait;
     wire l2_perf_buffer_wait;
 
-    l2_data_system l2_data_system_inst (
+    wire l2_flush_done;
+
+    l2_data_system #(
+        .EV_DEPTH(MEM_EV_DEPTH)
+    ) l2_data_system_inst (
         .clk(clk_i),
         .rst(rst_i),
+        .flush(flush_i),
+        .flush_done_o(l2_flush_done),
 
         .l2_req_valid(l2_req_valid),
         .l2_req_ready(l2_req_ready),
@@ -1031,6 +1044,7 @@ module top #(
     wire mem_perf_write;
     wire mem_perf_busy;
     wire mem_perf_word;
+    wire mem_subsystem_idle;
 
     mem_subsystem #(
         .EV_DEPTH(MEM_EV_DEPTH),
@@ -1057,9 +1071,16 @@ module top #(
         .perf_mem_busy_o(mem_perf_busy),
         .perf_mem_word_o(mem_perf_word),
 
-        .idle(),
+        .idle(mem_subsystem_idle),
         .timeout_err()
     );
+
+    // El flush termina cuando: (1) L2 y su eviction buffer ya no tienen
+    // nada pendiente (l2_flush_done), y (2) mem_subsystem tambien dreno
+    // su propio FIFO de eviccion y el arbitro volvio a IDLE. Sin esto,
+    // flush_done_o podria activarse mientras la ultima linea todavia
+    // esta cruzando el dominio de clk_mem hacia mem_controller.memory[].
+    assign flush_done_o = l2_flush_done && ev_empty && mem_subsystem_idle;
 
     // Una direccion desalineada se rechaza localmente y no se envia
     // a L1, evitando esperar una respuesta imposible.

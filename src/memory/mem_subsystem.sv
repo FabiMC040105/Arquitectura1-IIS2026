@@ -15,7 +15,7 @@ module mem_subsystem #(
     parameter int EV_DEPTH  = 4,        // 4..16 per spec
     parameter int FIRST_LAT = 3,        // clk_mem cycles (calibrate, see tb)
     parameter int TIMEOUT   = 2000,     // processor cycles
-    parameter     DATA_FILE = ""
+    parameter     DATA_FILE = "data.mem"
 )(
     input  logic         clk,           // processor clock
     input  logic         clk_mem,       // memory clock

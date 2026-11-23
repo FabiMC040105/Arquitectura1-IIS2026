@@ -2,7 +2,7 @@
 
 // Numero maximo de ciclos antes de abortar, por si el programa no termina. Se puede subir con -DMAX_CICLOS=...
 `ifndef MAX_CICLOS
-  `define MAX_CICLOS 100000
+  `define MAX_CICLOS 2500000
 `endif
 
 // Cuantas palabras de memoria de datos se vuelcan al terminar.
@@ -15,10 +15,17 @@ module tb_run;
     // Cuantos bundles de NOP seguidos se consideran fin de programa.
     localparam integer NOPS_FIN = 40;
 
+    // Limite de ciclos para esperar flush_done_o antes de desistir. Con
+    // EV_DEPTH lineas pendientes en el peor caso y Tmem ciclos cada una,
+    // sobra margen generoso para cualquier combinacion razonable.
+    localparam integer MAX_CICLOS_FLUSH = 100000;
+
     logic clk_i;
     logic clk_mem_i;
     logic rst_i;
     logic stall_i;
+    logic flush;
+    logic flush_done;
 
     logic global_stall_o;
 
@@ -42,6 +49,8 @@ module tb_run;
         .clk_mem_i(clk_mem_i),
         .rst_i(rst_i),
         .stall_i(stall_i),
+        .flush_i(flush),
+        .flush_done_o(flush_done),
 
         .global_stall_o(global_stall_o),
 
@@ -64,6 +73,7 @@ module tb_run;
 
     initial begin
         clk_i = 1'b0;
+        flush = 1'b0;
         forever #5 clk_i = ~clk_i;
     end
 
@@ -75,6 +85,7 @@ module tb_run;
     end
 
     integer ciclos;
+    integer ciclos_flush;
     integer nops_seguidos;
     integer i;
     logic [31:0] palabra;
@@ -91,7 +102,7 @@ module tb_run;
             end
         end
     endtask
-
+    
     // Vuelca las primeras palabras de la memoria de datos. La memoria es direccionable por bytes y little-endian.
     task automatic volcar_memoria;
         begin
@@ -104,6 +115,29 @@ module tb_run;
                            dut.mem_subsystem_inst.u_ctrl.memory[i*4 + 0]};
                 direccion = i*4;
                 $display("  [%04h] = %08h", direccion, palabra);
+            end
+        end
+    endtask
+
+    // Vuelca las lineas dirty que siguen en L2 y que por lo tanto todavia
+    // no llegaron a memoria principal (L2 es write-back, sin flush al
+    // terminar el programa). Util para distinguir un store perdido de un
+    // store que solo esta pendiente de eviccion.
+    integer set_idx, way_idx;
+    task automatic volcar_l2_dirty;
+        begin
+            $display("");
+            $display("--- Lineas dirty en L2 (aun no escritas a memoria principal) ---");
+            for (set_idx = 0; set_idx < 128; set_idx = set_idx + 1) begin
+                for (way_idx = 0; way_idx < 4; way_idx = way_idx + 1) begin
+                    if (dut.l2_data_system_inst.controller.cache_inst.valid_array[set_idx][way_idx] &&
+                        dut.l2_data_system_inst.controller.cache_inst.dirty_array[set_idx][way_idx]) begin
+                        $display("  set=%0d way=%0d addr_base=%08h data=%h",
+                            set_idx, way_idx,
+                            {dut.l2_data_system_inst.controller.cache_inst.tag_array[set_idx][way_idx], set_idx[6:0], 5'b0},
+                            dut.l2_data_system_inst.controller.cache_inst.data_array[set_idx][way_idx]);
+                    end
+                end
             end
         end
     endtask
@@ -143,6 +177,23 @@ module tb_run;
             end
         end
 
+        // Al terminar el programa, L2 todavia puede tener lineas dirty
+        // que nunca se evictaron (write-back sin flush implicito). Se
+        // pide un flush total y se espera su propia senal de fin en vez
+        // de un numero fijo de ciclos: el numero de lineas a drenar, y
+        // por lo tanto la duracion real, depende del programa.
+        flush = 1'b1;
+        ciclos_flush = 0;
+        while (!flush_done && ciclos_flush < MAX_CICLOS_FLUSH) begin
+            @(posedge clk_i);
+            ciclos_flush = ciclos_flush + 1;
+        end
+        @(posedge clk_i);
+        flush = 1'b0;
+
+        if (!flush_done && ciclos_flush >= MAX_CICLOS_FLUSH)
+            $display("AVISO: flush no completo tras %0d ciclos.", MAX_CICLOS_FLUSH);
+
         $display("");
         if (nops_seguidos >= NOPS_FIN)
             $display("Programa terminado tras %0d ciclos (%0d NOPs seguidos).",
@@ -154,7 +205,9 @@ module tb_run;
         $display("PC final = %08h", pc_o);
 
         volcar_registros();
+        volcar_l2_dirty();
         volcar_memoria();
+        
 
         $display("");
         $display("========================================");

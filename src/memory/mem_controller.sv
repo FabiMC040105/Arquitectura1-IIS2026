@@ -1,6 +1,6 @@
 `timescale 1ns/1ps
 `ifndef DATA_FILE
-  `define DATA_FILE "input.mem"
+  `define DATA_FILE "data.mem"
 `endif
 
 // Main memory + burst controller. Runs entirely on clk_mem.

@@ -2,7 +2,9 @@
 
 // Integracion L2 + eviction buffer. Una sola transaccion de memoria activa.
 // La memoria externa debe responder con mem_resp_valid tambien para escrituras.
-module l2_data_system (
+module l2_data_system #(
+    parameter integer EV_DEPTH = 8
+    )( 
     input  logic         clk,
     input  logic         rst,
     input  logic         l2_req_valid,
@@ -14,6 +16,13 @@ module l2_data_system (
     output logic         l2_write_ready,
     input  logic [31:0]  l2_write_addr,
     input  logic [31:0]  l2_write_data,
+
+    // Flush total al terminar el programa. flush_done_o se activa un
+    // ciclo cuando ya no quedan lineas dirty en L2 NI en el eviction
+    // buffer, es decir, cuando todo lo pendiente ya salio hacia memoria
+    // principal (sujeto a la latencia de mem_subsystem/mem_controller).
+    input  logic         flush,
+    output logic         flush_done_o,
 
     // Puerto unico hacia controlador de memoria (persona 4).
     output logic         mem_req_valid,
@@ -47,9 +56,27 @@ module l2_data_system (
     logic         raw_conflict;
     logic         fifo_full, fifo_empty;
     wire          perf_eviction_wait;
+    logic         scan_done;
+    logic         scan_done_latched;
 
     assign perf_buffer_wait_o =
         perf_eviction_wait || (fill_req_valid && raw_conflict);
+
+    // El flush termina cuando el recorrido de L2 ya no encuentra lineas
+    // dirty Y el eviction buffer ya vacio todo lo que junto en el camino.
+    // scan_done de l2_controller es un pulso de un ciclo: se mantiene
+    // "recordado" aqui hasta que el buffer tambien se vacie, porque el
+    // recorrido puede terminar antes de que la FIFO drene a memoria.
+    always @(posedge clk or posedge rst) begin
+        if (rst)
+            scan_done_latched <= 1'b0;
+        else if (!flush)
+            scan_done_latched <= 1'b0;
+        else if (scan_done)
+            scan_done_latched <= 1'b1;
+    end
+
+    assign flush_done_o = (scan_done || scan_done_latched) && fifo_empty;
 
     l2_controller controller (
         .clk(clk), .rst(rst),
@@ -71,6 +98,8 @@ module l2_data_system (
         .evict_ready(evict_ready),
         .evict_addr(evict_addr),
         .evict_data(evict_data),
+        .flush_i(flush),
+        .flush_done_o(scan_done),
         .read_hits(read_hits),
         .read_misses(read_misses),
         .write_hits(write_hits),
@@ -82,7 +111,7 @@ module l2_data_system (
 
     // Estrategia RAW: stall. Si un refill apunta a una linea que esta
     // en la FIFO, esperar a que se escriba antes de leerla de RAM.
-    l2_eviction_buffer #(.DEPTH(8)) eviction_fifo (
+    l2_eviction_buffer #(.DEPTH(EV_DEPTH)) eviction_fifo (
         .clk(clk), .rst(rst),
         .evict_valid(evict_valid),
         .evict_ready(evict_ready),
