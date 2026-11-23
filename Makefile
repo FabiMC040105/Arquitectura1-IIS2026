@@ -96,6 +96,10 @@ feistel:
 	$(IVERILOG) $(FLAGS) -s tb_feistel -o sim_feistel tb/tb_feistel.sv $(SRC)
 	$(VVP) sim_feistel
 
+perf:
+	$(IVERILOG) $(FLAGS) -s tb_performance -o sim_perf tb/tb_performance.sv $(SRC)
+	$(VVP) sim_perf
+
 test: fetch dispatch tb_top feistel
 
 # Elimina los ejecutables de simulación.

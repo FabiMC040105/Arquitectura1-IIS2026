@@ -59,9 +59,15 @@ module top #(
     output logic [63:0] perf_mem_busy_cycles_o,
     output logic [63:0] perf_mem_words_o,
     output logic [63:0] perf_cache_stall_cycles_o,
+    output logic [63:0] perf_branch_stall_cycles_o,
     output logic [63:0] perf_l2_lookup_stall_cycles_o,
     output logic [63:0] perf_memory_stall_cycles_o,
     output logic [63:0] perf_buffer_stall_cycles_o,
+
+    output logic [63:0] perf_l1_read_hits_o,
+    output logic [63:0] perf_l1_read_misses_o,
+    output logic [63:0] perf_l1_write_hits_o,
+    output logic [63:0] perf_l1_write_misses_o,
 
     output logic [31:0] pc_o, // Direccion del bundle que Fetch lee.
     output logic [127:0] bundle_o, // Bundle completo de 128 bits que sale de Fetch.
@@ -1313,14 +1319,14 @@ module top #(
         .instructions_o(perf_instructions_o),
 
         .cache_stall_cycles_o(perf_cache_stall_cycles_o),
-        .branch_stall_cycles_o(),
+        .branch_stall_cycles_o(perf_branch_stall_cycles_o),
         .l2_lookup_stall_cycles_o(perf_l2_lookup_stall_cycles_o),
         .memory_stall_cycles_o(perf_memory_stall_cycles_o),
         .buffer_stall_cycles_o(perf_buffer_stall_cycles_o),
-        .l1_read_hits_o(),
-        .l1_read_misses_o(),
-        .l1_write_hits_o(),
-        .l1_write_misses_o(),
+        .l1_read_hits_o(perf_l1_read_hits_o),
+        .l1_read_misses_o(perf_l1_read_misses_o),
+        .l1_write_hits_o(perf_l1_write_hits_o),
+        .l1_write_misses_o(perf_l1_write_misses_o),
         .mem_reads_o(perf_mem_reads_o),
         .mem_writes_o(perf_mem_writes_o),
         .mem_busy_cycles_o(perf_mem_busy_cycles_o),
