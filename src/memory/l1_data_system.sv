@@ -28,6 +28,9 @@ module l1_data_system (
     output wire [31:0] cpu_read_data,
     output wire cpu_ready,
     output wire cpu_stall,
+    output wire perf_access_o,
+    output wire perf_write_o,
+    output wire perf_hit_o,
 
     output wire l2_write_valid,// Nos indica que tenemos una escritura pendiente
 
@@ -285,5 +288,28 @@ module l1_data_system (
     // Si el procesador solicita una operacion y todavia no podemos atenderla, debe esperar
     assign cpu_stall =
         (cpu_read || cpu_write) && !cpu_ready;
+
+
+    // Observacion de rendimiento: una vez por solicitud
+    logic load_had_miss;
+
+    always_ff @(posedge clk or posedge rst) begin
+        if (rst)
+            load_had_miss <= 1'b0;
+        else if (miss_start)
+            load_had_miss <= 1'b1;
+        else if (load_ready)
+            load_had_miss <= 1'b0;
+    end
+
+    wire load_hit_event = load_ready && !load_had_miss;
+
+    assign perf_access_o =
+        miss_start || load_hit_event || store_accept;
+
+    assign perf_write_o = store_accept;
+
+    assign perf_hit_o =
+        (store_accept && hit) || load_hit_event;
 
 endmodule

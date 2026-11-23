@@ -71,7 +71,7 @@ top:
 	$(IVERILOG) $(FLAGS) -s top -tnull $(SRC)
 
 mem:
-	$(IVERILOG) $(FLAGS) -o sim src/flop_sync.sv src/mem_controller.sv src/mem_subsystem.sv tb/tb_mem.sv && \
+	$(IVERILOG) $(FLAGS) -o sim src/memory/flop_sync.sv src/memory/mem_controller.sv src/memory/mem_subsystem.sv tb/tb_mem.sv && \
 	$(VVP) sim
 
 # Ejecuta el procesador con un programa arbitrario del compilador.

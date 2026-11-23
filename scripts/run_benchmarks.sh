@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Ejecuta las pruebas de lectura sobre el procesador original (sin cache).
+# Ejecuta pruebas de lectura sobre CPU + L1 + L2 + RAM.
 # Los resultados se guardan en build/benchmarks para no mezclar datos con el RTL.
 set -euo pipefail
 
@@ -15,8 +15,8 @@ done
 out=build/benchmarks
 mkdir -p "$out"
 # No dejamos un CSV anterior que parezca corresponder a una corrida fallida.
-rm -f "$out/baseline.csv" "$out/baseline.csv.tmp"
-trap 'rm -f "$out/baseline.csv.tmp"' EXIT
+rm -f "$out/resultados_lecturas.csv" "$out/resultados_lecturas.csv.tmp"
+trap 'rm -f "$out/resultados_lecturas.csv.tmp"' EXIT
 
 # Primero comprobamos que los contadores sigan funcionando de forma aislada.
 echo '=== Prueba de contadores ==='
@@ -30,9 +30,9 @@ echo '=== Preparando benchmarks ==='
 python3 python/generate_benchmarks.py
 
 for pattern in sequential random stride; do
-    echo "=== Ejecutando $pattern (sin cache) ==="
+    echo "=== Ejecutando $pattern con L1/L2/RAM ==="
     log="$out/${pattern}.log"
-    if ! make run PROGRAM="$out/${pattern}.mem" DATA="$out/data.mem" > "$log" 2>&1; then
+    if ! make run PROGRAM="$out/${pattern}.mem" DATA="$out/data.mem" FLAGS="-g2012 -Wall -DDUMP_PALABRAS=16 -DMAX_CICLOS=100000" > "$log" 2>&1; then
         tail -n 30 "$log" >&2
         echo "ERROR: fallo la simulacion de $pattern. Revisar $log" >&2
         exit 1
@@ -55,7 +55,7 @@ out = Path(sys.argv[1])
 manifest = json.loads((out / 'manifest.json').read_text())
 fields = ['benchmark', 'configuration', 'expected_reads', 'unique_cache_lines',
           'rom_bundles', 'rom_bytes', 'tb_run_cycles', 'status']
-with (out / 'baseline.csv.tmp').open('w', newline='', encoding='ascii') as handle:
+with (out / 'resultados_lecturas.csv.tmp').open('w', newline='', encoding='ascii') as handle:
     writer = csv.DictWriter(handle, fieldnames=fields)
     writer.writeheader()
     for name in ('sequential', 'random', 'stride'):
@@ -66,7 +66,7 @@ with (out / 'baseline.csv.tmp').open('w', newline='', encoding='ascii') as handl
         item = manifest[name]
         writer.writerow({
             'benchmark': name,
-            'configuration': 'original_no_cache',
+            'configuration': 'l1_l2_ram',
             'expected_reads': item['reads'],
             'unique_cache_lines': item['unique_cache_lines'],
             'rom_bundles': item['program_bundles'],
@@ -74,9 +74,9 @@ with (out / 'baseline.csv.tmp').open('w', newline='', encoding='ascii') as handl
             'tb_run_cycles': int(match.group(1)),
             'status': 'PASS',
         })
-(out / 'baseline.csv.tmp').replace(out / 'baseline.csv')
+(out / 'resultados_lecturas.csv.tmp').replace(out / 'resultados_lecturas.csv')
 PY
 
 echo '=== Resumen de las tres pruebas ==='
-cat "$out/baseline.csv"
-echo "OK: resultados guardados en $out/baseline.csv"
+cat "$out/resultados_lecturas.csv"
+echo "OK: resultados guardados en $out/resultados_lecturas.csv"

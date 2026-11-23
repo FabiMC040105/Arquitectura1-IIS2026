@@ -41,6 +41,21 @@ module top #(
     output logic [63:0] perf_bundles_o,
     output logic [63:0] perf_instructions_o,
 
+    // Metricas de cache L2
+    output logic [63:0] perf_l2_read_hits_o,
+    output logic [63:0] perf_l2_read_misses_o,
+    output logic [63:0] perf_l2_write_hits_o,
+    output logic [63:0] perf_l2_write_misses_o,
+
+    output logic [63:0] perf_mem_reads_o,
+    output logic [63:0] perf_mem_writes_o,
+    output logic [63:0] perf_mem_busy_cycles_o,
+    output logic [63:0] perf_mem_words_o,
+    output logic [63:0] perf_cache_stall_cycles_o,
+    output logic [63:0] perf_l2_lookup_stall_cycles_o,
+    output logic [63:0] perf_memory_stall_cycles_o,
+    output logic [63:0] perf_buffer_stall_cycles_o,
+
     output logic [31:0] pc_o, // Direccion del bundle que Fetch lee.
     output logic [127:0] bundle_o, // Bundle completo de 128 bits que sale de Fetch.
     output logic fetch_valid_o, // Indica si Fetch esta entregando un bundle valido.
@@ -896,6 +911,19 @@ module top #(
     wire [255:0] mem_resp_data;
 
     wire [31:0] read_hits, read_misses, write_hits, write_misses;
+
+    // Exportar contadores reales de L2
+    assign perf_l2_read_hits_o =
+        {32'b0, read_hits};
+
+    assign perf_l2_read_misses_o =
+        {32'b0, read_misses};
+
+    assign perf_l2_write_hits_o =
+        {32'b0, write_hits};
+
+    assign perf_l2_write_misses_o =
+        {32'b0, write_misses};
     wire [3:0]  eviction_count;
 
     wire        rd_req, rd_done;
@@ -905,6 +933,10 @@ module top #(
     wire        ev_push, ev_full, ev_empty;
     wire [31:0] ev_addr;
     wire [255:0] ev_line;
+
+    wire l1_perf_access;
+    wire l1_perf_write;
+    wire l1_perf_hit;
 
     l1_data_system l1_data_system_inst (
         .clk(clk_i),
@@ -918,6 +950,9 @@ module top #(
         .cpu_read_data(cache_resp_read_data),
         .cpu_ready(cache_resp_ready),
         .cpu_stall(cache_resp_stall),
+        .perf_access_o(l1_perf_access),
+        .perf_write_o(l1_perf_write),
+        .perf_hit_o(l1_perf_hit),
 
         .l2_req_valid(l2_req_valid),
         .l2_req_ready(l2_req_ready),
@@ -931,6 +966,10 @@ module top #(
         .l2_write_addr(l2_write_addr),
         .l2_write_data(l2_write_data)
     );
+
+    wire l2_perf_lookup;
+    wire l2_perf_memory_wait;
+    wire l2_perf_buffer_wait;
 
     l2_data_system l2_data_system_inst (
         .clk(clk_i),
@@ -959,7 +998,10 @@ module top #(
         .read_misses(read_misses),
         .write_hits(write_hits),
         .write_misses(write_misses),
-        .eviction_count(eviction_count)
+        .eviction_count(eviction_count),
+        .perf_lookup_o(l2_perf_lookup),
+        .perf_memory_wait_o(l2_perf_memory_wait),
+        .perf_buffer_wait_o(l2_perf_buffer_wait)
     );
 
     l2_mem_bridge l2_mem_bridge_inst (
@@ -985,6 +1027,11 @@ module top #(
         .ev_full(ev_full)
     );
 
+    wire mem_perf_accept;
+    wire mem_perf_write;
+    wire mem_perf_busy;
+    wire mem_perf_word;
+
     mem_subsystem #(
         .EV_DEPTH(MEM_EV_DEPTH),
         .FIRST_LAT(MEM_FIRST_LAT),
@@ -1004,6 +1051,11 @@ module top #(
         .ev_line(ev_line),
         .ev_full(ev_full),
         .ev_empty(ev_empty),
+
+        .perf_mem_accept_o(mem_perf_accept),
+        .perf_mem_write_o(mem_perf_write),
+        .perf_mem_busy_o(mem_perf_busy),
+        .perf_mem_word_o(mem_perf_word),
 
         .idle(),
         .timeout_err()
@@ -1195,6 +1247,23 @@ module top #(
     // corresponden al pipeline: ciclos, bundles e instrucciones retiradas.
     // Las metricas detalladas de L1/L2/memoria se conectaran en el nivel
     // de integracion de la jerarquia de memoria.
+
+    // Ciclos de recuperacion del pipeline despues de un salto.
+    logic [2:0] branch_penalty_left;
+
+    always_ff @(posedge clk_i or posedge rst_i) begin
+        if (rst_i) begin
+            branch_penalty_left <= 3'd0;
+        end else if (!global_stall) begin
+            if (wb_pc_write)
+                branch_penalty_left <= 3'd4;
+            else if (ex_branch_taken)
+                branch_penalty_left <= 3'd3;
+            else if (branch_penalty_left != 3'd0)
+                branch_penalty_left <= branch_penalty_left - 3'd1;
+        end
+    end
+
     performance_counters performance_counters_inst (
         .clk_i(clk_i),
         .rst_i(rst_i),
@@ -1204,37 +1273,37 @@ module top #(
         .retire_slots_i(wb_retire_slots),
         .pipeline_stall_i(global_stall),
         .cache_stall_i(cache_stall),
-        .branch_stall_i(1'b0),
-        .stall_l2_lookup_i(1'b0),
-        .stall_memory_i(1'b0),
-        .stall_buffer_i(1'b0),
+        .branch_stall_i(branch_penalty_left != 3'd0),
+        .stall_l2_lookup_i(l2_perf_lookup),
+        .stall_memory_i(l2_perf_memory_wait),
+        .stall_buffer_i(l2_perf_buffer_wait),
 
-        .l1_access_i(1'b0),
-        .l1_write_i(1'b0),
-        .l1_hit_i(1'b0),
+        .l1_access_i(l1_perf_access),
+        .l1_write_i(l1_perf_write),
+        .l1_hit_i(l1_perf_hit),
 
-        .mem_accept_i(1'b0),
-        .mem_write_i(1'b0),
-        .mem_busy_i(1'b0),
-        .mem_word_i(1'b0),
+        .mem_accept_i(mem_perf_accept),
+        .mem_write_i(mem_perf_write),
+        .mem_busy_i(mem_perf_busy),
+        .mem_word_i(mem_perf_word),
 
         .cycles_o(perf_cycles_o),
         .bundles_o(perf_bundles_o),
         .instructions_o(perf_instructions_o),
 
-        .cache_stall_cycles_o(),
+        .cache_stall_cycles_o(perf_cache_stall_cycles_o),
         .branch_stall_cycles_o(),
-        .l2_lookup_stall_cycles_o(),
-        .memory_stall_cycles_o(),
-        .buffer_stall_cycles_o(),
+        .l2_lookup_stall_cycles_o(perf_l2_lookup_stall_cycles_o),
+        .memory_stall_cycles_o(perf_memory_stall_cycles_o),
+        .buffer_stall_cycles_o(perf_buffer_stall_cycles_o),
         .l1_read_hits_o(),
         .l1_read_misses_o(),
         .l1_write_hits_o(),
         .l1_write_misses_o(),
-        .mem_reads_o(),
-        .mem_writes_o(),
-        .mem_busy_cycles_o(),
-        .mem_words_o()
+        .mem_reads_o(perf_mem_reads_o),
+        .mem_writes_o(perf_mem_writes_o),
+        .mem_busy_cycles_o(perf_mem_busy_cycles_o),
+        .mem_words_o(perf_mem_words_o)
     );
 
     // =========================================================

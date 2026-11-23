@@ -13,7 +13,7 @@
 module tb_run;
 
     // Cuantos bundles de NOP seguidos se consideran fin de programa.
-    localparam integer NOPS_FIN = 8;
+    localparam integer NOPS_FIN = 40;
 
     logic clk_i;
     logic clk_mem_i;
@@ -135,7 +135,7 @@ module tb_run;
             // Un bundle completamente vacio es un NOP en los cuatro
             // slots. Varios seguidos indican que el programa ya no
             // tiene trabajo pendiente.
-            if (dispatch_valid_o) begin
+            if (dispatch_valid_o && !global_stall_o) begin
                 if (bundle_o === 128'b0)
                     nops_seguidos = nops_seguidos + 1;
                 else

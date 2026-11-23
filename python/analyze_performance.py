@@ -151,8 +151,8 @@ def main():
         if args.baseline:
             save_csv(args.out / 'baseline_summary.csv', rows)
             table(args.out / 'baseline_report.md', rows, list(rows[0]),
-                  'Procesador original sin cache ni latencia externa realista. Los ciclos provienen de tb_run y su criterio de fin; no son ciclos de retiro medidos. No se calculan IPC ni AMAT a partir de estos datos.')
-            chart(args.out / 'baseline_cycles.svg', rows, 'tb_run_cycles', 'Ciclos reportados por tb_run (sin cache)', 'ciclos')
+                  'Prueba funcional del procesador con L1, L2 y RAM. Los ciclos provienen de tb_run y su criterio de fin; no son ciclos de retiro medidos. No se calculan IPC ni AMAT a partir de estos datos.')
+            chart(args.out / 'baseline_cycles.svg', rows, 'tb_run_cycles', 'Ciclos reportados por tb_run con L1/L2/RAM', 'ciclos')
             chart(args.out / 'baseline_lines.svg', rows, 'unique_cache_lines', 'Lineas distintas previstas por benchmark', 'lineas de 32 bytes')
         else:
             save_csv(args.out / 'hardware_metrics.csv', rows)
