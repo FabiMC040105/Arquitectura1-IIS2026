@@ -44,6 +44,27 @@ module tb_run;
     logic valid_feist_o;
     logic dispatch_valid_o;
 
+    logic [63:0] perf_cycles;
+    logic [63:0] perf_bundles;
+    logic [63:0] perf_instructions;
+    logic [63:0] perf_l2_read_hits;
+    logic [63:0] perf_l2_read_misses;
+    logic [63:0] perf_l2_write_hits;
+    logic [63:0] perf_l2_write_misses;
+    logic [63:0] perf_mem_reads;
+    logic [63:0] perf_mem_writes;
+    logic [63:0] perf_mem_busy_cycles;
+    logic [63:0] perf_mem_words;
+    logic [63:0] perf_cache_stall_cycles;
+    logic [63:0] perf_branch_stall_cycles;
+    logic [63:0] perf_l2_lookup_stall_cycles;
+    logic [63:0] perf_memory_stall_cycles;
+    logic [63:0] perf_buffer_stall_cycles;
+    logic [63:0] perf_l1_read_hits;
+    logic [63:0] perf_l1_read_misses;
+    logic [63:0] perf_l1_write_hits;
+    logic [63:0] perf_l1_write_misses;
+
     top dut (
         .clk_i(clk_i),
         .clk_mem_i(clk_mem_i),
@@ -68,7 +89,31 @@ module tb_run;
         .valid_bru_o(valid_bru_o),
         .valid_feist_o(valid_feist_o),
 
-        .dispatch_valid_o(dispatch_valid_o)
+        .dispatch_valid_o(dispatch_valid_o),
+
+        .perf_cycles_o(perf_cycles),
+        .perf_bundles_o(perf_bundles),
+        .perf_instructions_o(perf_instructions),
+
+        .perf_l2_read_hits_o(perf_l2_read_hits),
+        .perf_l2_read_misses_o(perf_l2_read_misses),
+        .perf_l2_write_hits_o(perf_l2_write_hits),
+        .perf_l2_write_misses_o(perf_l2_write_misses),
+
+        .perf_mem_reads_o(perf_mem_reads),
+        .perf_mem_writes_o(perf_mem_writes),
+        .perf_mem_busy_cycles_o(perf_mem_busy_cycles),
+        .perf_mem_words_o(perf_mem_words),
+        .perf_cache_stall_cycles_o(perf_cache_stall_cycles),
+        .perf_branch_stall_cycles_o(perf_branch_stall_cycles),
+        .perf_l2_lookup_stall_cycles_o(perf_l2_lookup_stall_cycles),
+        .perf_memory_stall_cycles_o(perf_memory_stall_cycles),
+        .perf_buffer_stall_cycles_o(perf_buffer_stall_cycles),
+
+        .perf_l1_read_hits_o(perf_l1_read_hits),
+        .perf_l1_read_misses_o(perf_l1_read_misses),
+        .perf_l1_write_hits_o(perf_l1_write_hits),
+        .perf_l1_write_misses_o(perf_l1_write_misses)
     );
 
     initial begin
@@ -142,6 +187,34 @@ module tb_run;
         end
     endtask
 
+    // Vuelca los contadores de rendimiento, mismo formato que check_value en tb_performance.sv.
+    task automatic volcar_contadores;
+        begin
+            $display("");
+            $display("--- Contadores de rendimiento ---");
+            $display("Ciclos = %0d", perf_cycles);
+            $display("Bundles = %0d", perf_bundles);
+            $display("Instrucciones = %0d", perf_instructions);
+            $display("Stalls cache = %0d", perf_cache_stall_cycles);
+            $display("Stalls salto = %0d", perf_branch_stall_cycles);
+            $display("Stalls consulta L2 = %0d", perf_l2_lookup_stall_cycles);
+            $display("Stalls memoria = %0d", perf_memory_stall_cycles);
+            $display("Stalls buffer = %0d", perf_buffer_stall_cycles);
+            $display("L1 read hits = %0d", perf_l1_read_hits);
+            $display("L1 read misses = %0d", perf_l1_read_misses);
+            $display("L1 write hits = %0d", perf_l1_write_hits);
+            $display("L1 write misses = %0d", perf_l1_write_misses);
+            $display("L2 read hits = %0d", perf_l2_read_hits);
+            $display("L2 read misses = %0d", perf_l2_read_misses);
+            $display("L2 write hits = %0d", perf_l2_write_hits);
+            $display("L2 write misses = %0d", perf_l2_write_misses);
+            $display("Memoria lecturas = %0d", perf_mem_reads);
+            $display("Memoria escrituras = %0d", perf_mem_writes);
+            $display("Memoria ciclos ocupada = %0d", perf_mem_busy_cycles);
+            $display("Memoria palabras = %0d", perf_mem_words);
+        end
+    endtask
+
     initial begin
         $dumpfile("build/tb_run.vcd");
         $dumpvars(0, tb_run);
@@ -207,7 +280,8 @@ module tb_run;
         volcar_registros();
         volcar_l2_dirty();
         volcar_memoria();
-        
+        volcar_contadores();
+
 
         $display("");
         $display("========================================");
